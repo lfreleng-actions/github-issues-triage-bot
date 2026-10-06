@@ -87,7 +87,11 @@ jobs:
         ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
       retriage: ${{ inputs.retriage || false }}
       repository: ${{ inputs.repository || '' }}
-      egress_policy: 'audit'
+      # Trusted jobs run in block mode with the organisation allow-list;
+      # the propose job is always audit.
+      egress_policy: 'block'
+      # yamllint disable-line rule:line-length
+      egress_allow_config: '@e0e35011ee145321a51d3226f044ec88dfe645b1'  # v0.16.4
       # Repository-level credentials reach trusted preparation
       # and application actions, never an action in the agent job.
       # No client id permits dry-run fallback; a missing key fails

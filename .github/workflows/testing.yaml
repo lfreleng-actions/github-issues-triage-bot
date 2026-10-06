@@ -66,7 +66,9 @@ jobs:
       dry_run: true
       # Skip the agent: PR runs are secretless (see header comment).
       skip_agent: true
-      egress_policy: 'audit'
+      egress_policy: 'block'
+      # yamllint disable-line rule:line-length
+      egress_allow_config: '@e0e35011ee145321a51d3226f044ec88dfe645b1'  # v0.16.4
       assets_repository: >-
         ${{ github.event.pull_request.head.repo.full_name }}
       assets_ref: "${{ github.event.pull_request.head.sha }}"
@@ -92,7 +94,9 @@ jobs:
       engine: "${{ inputs.engine || 'claude' }}"
       # Bound the session cost on test runs.
       max_turns: '40'
-      egress_policy: 'audit'
+      egress_policy: 'block'
+      # yamllint disable-line rule:line-length
+      egress_allow_config: '@e0e35011ee145321a51d3226f044ec88dfe645b1'  # v0.16.4
       assets_repository: "${{ github.repository }}"
       assets_ref: "${{ github.sha }}"
     secrets:
