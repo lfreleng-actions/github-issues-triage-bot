@@ -141,11 +141,16 @@ turn telemetry.
 
 ## Egress
 
-The model backend includes `api.githubcopilot.com:443`; installation
-also needs `registry.npmjs.org:443` and the Node distribution host.
-Treat these as starting points, not a verified complete allow-list
-for this layout. Use audit mode to collect endpoints before block
-mode. Audit records traffic without blocking it.
+`egress_policy` governs the trusted Prepare and Apply jobs; the
+bundled callers run them in block mode behind the organisation
+allow-list. The Propose job always audits: the model backend
+(`api.githubcopilot.com:443` and its enterprise endpoint) is outside
+that allow-list, and a session in block mode cannot start. Audit
+records traffic without blocking it, and
+[Design §7.1](../development/DESIGN.md#71-egress) states what that
+exposes on the Propose runner and what bounds it. Adding the backend
+to the organisation allow-list is the step that would let Propose
+block too.
 
 ## Failure modes
 

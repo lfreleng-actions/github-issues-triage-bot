@@ -547,13 +547,14 @@ class WorkflowContractTests(WorkflowCase):
             with self.subTest(step=step.get("name")):
                 self.assertIn("needs.propose.result == 'success'", step["if"])
 
-    def test_allow_list_summary_is_emitted_in_prepare_alone(self) -> None:
-        """Keep hardening in every job without duplicating its summary block."""
-        for job, expected in (
-            ("prepare", "true"),
-            ("propose", "false"),
-            ("apply", "false"),
-        ):
+    def test_trusted_jobs_block_and_propose_audits(self) -> None:
+        """Trusted jobs load the allow-list; the agent job audits.
+
+        The model backend is outside the organisation allow-list, so a
+        propose job in block mode cannot reach it (run 37522458757).
+        The summary prints from prepare alone.
+        """
+        for job, expected in (("prepare", "true"), ("apply", "false")):
             with self.subTest(job=job):
                 loaders = self.actions(
                     job, "lfreleng-actions/harden-runner-block-action"
@@ -565,9 +566,18 @@ class WorkflowContractTests(WorkflowCase):
                 self.assertEqual(
                     loaders[0]["with"]["config"], "${{ inputs.egress_allow_config }}"
                 )
+                harden = self.actions(job, "step-security/harden-runner")
+                self.assertEqual(len(harden), 1)
                 self.assertEqual(
-                    len(self.actions(job, "step-security/harden-runner")), 1
+                    harden[0]["with"]["egress-policy"], "${{ inputs.egress_policy }}"
                 )
+        self.assertEqual(
+            self.actions("propose", "lfreleng-actions/harden-runner-block-action"), []
+        )
+        harden = self.actions("propose", "step-security/harden-runner")
+        self.assertEqual(len(harden), 1)
+        self.assertEqual(harden[0]["with"]["egress-policy"], "audit")
+        self.assertNotIn("allowed-endpoints", harden[0]["with"])
 
     def test_apply_can_report_when_propose_is_skipped_or_fails(self) -> None:
         """A status function overrides implicit success without allowing cancellation."""
@@ -701,6 +711,32 @@ class SelfRepositoryCallTests(unittest.TestCase):
                             if value.get("required") == "true"
                         }
                         self.assertLessEqual(required, set(supplied))
+
+    def test_every_bundled_call_runs_trusted_jobs_in_block_mode(self) -> None:
+        """Each caller of the reusable workflow passes block and a pinned list.
+
+        The reusable workflow forwards egress_policy to Prepare and Apply
+        (Propose always audits), so the bundled callers are where block
+        mode is chosen; a caller dropping to audit would leave the
+        trusted, credential-holding jobs unrestricted.
+        """
+        calls = 0
+        for name in ("testing.yaml", "issues-triage-cron.yaml"):
+            caller: dict[str, Any] = yaml.safe_load(
+                (WORKFLOW.parent / name).read_text(encoding="utf-8")
+            )
+            for job_name, job in caller["jobs"].items():
+                if not str(job.get("uses", "")).startswith("$/"):
+                    continue
+                calls += 1
+                with self.subTest(caller=name, job=job_name):
+                    supplied = job["with"]
+                    self.assertEqual(supplied.get("egress_policy"), "block")
+                    self.assertRegex(
+                        str(supplied.get("egress_allow_config", "")), r"^@[0-9a-f]{40}$"
+                    )
+        # Cron's triage job and testing's plumbing and dry-run jobs.
+        self.assertEqual(calls, 3)
 
 
 class WorkflowScriptTests(WorkflowCase):

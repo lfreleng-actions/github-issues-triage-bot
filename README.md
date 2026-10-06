@@ -167,7 +167,7 @@ Propose never receives it.
 | `skip_agent` | `false` | Plumbing test: skip the agent session |
 | `repository` | `''` | Restrict the scan to one repository |
 | `exclude_repos` | `''` | Comma-separated repositories to skip |
-| `egress_policy` | `audit` | harden-runner mode (`audit`/`block`) |
+| `egress_policy` | `audit` | harden-runner mode for Prepare and Apply; Propose always audits |
 | `egress_allow_config` | `''` | `harden-runner-block-action` config coordinate |
 | `github_app_client_id` | `''` | App auth; empty limits runs to dry-run |
 | `assets_repository` | this repo | Source of the prompt and scripts |
