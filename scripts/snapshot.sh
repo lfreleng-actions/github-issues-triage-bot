@@ -48,8 +48,14 @@ tmpdir="$(mktemp -d "$outdir/.snapshot.XXXXXX")"
 trap 'rm -rf -- "$tmpdir"' EXIT
 printf '%s\n' "$excludes" > "$tmpdir/excluded-repos.txt"
 
+# The packet travels to a runner that audits egress rather than
+# blocking it (DESIGN.md section 7.1). That is acceptable for text the
+# organisation already publishes and for nothing else, so the search
+# asks for issues in public repositories alone. The filter runs
+# server-side at fetch time: no separate listing to race against, and
+# no listing cap to fall off.
 limit=1000
-args=(--owner "$ORG" --state open --limit "$limit"
+args=(--owner "$ORG" --state open --visibility public --limit "$limit"
   --json 'repository,number,title,url,labels,createdAt,updatedAt')
 if [ -n "${REPOSITORY:-}" ]; then
   args+=(--repo "$ORG/$REPOSITORY")

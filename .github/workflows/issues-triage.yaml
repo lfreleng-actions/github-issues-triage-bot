@@ -325,13 +325,12 @@ jobs:
     steps:
       # Always audit: the model backend (api.githubcopilot.com and its
       # enterprise endpoint) is outside the organisation allow-list,
-      # so block mode cannot run a session (run 37522458757). Audit
-      # leaves the issue packet, the model PAT and the Actions runtime
-      # token on a runner that can reach any host; DESIGN.md section
-      # 7.1 records that exposure and what bounds it: the packet is
-      # public issue text, the PAT buys model requests alone, and the
-      # runtime token holds contents: read on this repository and
-      # expires with the job. Nothing here can write anywhere.
+      # so block mode cannot run a session (run 37522458757). Audit is
+      # an accepted exposure: the packet, the model PAT, the job token
+      # and the runtime token sit on a runner that can reach any host.
+      # DESIGN.md section 7.1 states what the design does about each;
+      # none of it is a sandbox, and no credential here can write to a
+      # repository.
       - name: 'Harden runner (audit)'
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1

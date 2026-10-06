@@ -50,8 +50,11 @@ and `secrets.BOT_APP_PRIVATE_KEY`. Here they hold the **LF/RelEng
 Issues Triage Bot** App, whose slug `config/bot.json` records.
 
 Without App credentials, trusted jobs use their job-native token
-for dry-run reads within its access; it does not grant organisation-wide
-private access. Live mode refuses to start without an App client ID.
+for dry-run reads within its access. The scan fetches issues from
+public repositories alone, whichever token reads, because the packet
+travels to a runner that audits egress (see the design's section
+7.1 for the exposure that remains). Live mode refuses to start without an App
+client ID.
 The current live App mint and field/type writes still need remote
 validation; offline tests do not verify GitHub's permission handling.
 

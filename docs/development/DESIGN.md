@@ -112,9 +112,9 @@ Triage Bot**, whose slug `config/bot.json` records and the pre-flight
 gate checks.
 
 Without an App, trusted jobs use their job-native token for dry-run
-reads within its access. That token does not grant organisation-wide
-private access. Propose's job-native `GITHUB_TOKEN` has
-`contents: read` and no other permissions. It has no App key,
+reads within its access. Whichever token reads, the snapshot fetches
+issues from public repositories alone (§7.1). Propose's job-native
+`GITHUB_TOKEN` has `contents: read` and no other permissions. It has no App key,
 installation token or App-token post action.
 
 ### 5.2 Model credentials are separate
@@ -214,23 +214,41 @@ model backend (`api.githubcopilot.com` and its enterprise endpoint)
 is outside the organisation allow-list and a session in block mode
 cannot start. Audit records outbound calls without blocking them.
 
-Audit mode is a deliberate, bounded exposure, not a claim that the
-job holds nothing worth protecting. §12.2 names what sits on that
-runner: the offline issue packet, the model PAT and the Actions
-runtime token. A prompt-injected session could send any of them to
-a host of its choosing. What bounds the damage is what each is
-worth: the packet is text from public issues the organisation
-already publishes; the PAT buys model requests on one person's
-entitlement and grants no repository access; the runtime token
-carries `contents: read` on this repository alone and expires with
-the job. No credential on the Propose runner can write to any
-repository, and §12.7 keeps every write behind evidence the trusted
-jobs verify. The residual risks are model spend and disclosure of
-public text, and the per-session timeout and the operator's spend
-review are the controls for the first.
+Audit mode on Propose is an accepted exposure, recorded here so
+operators weigh it with the full picture. §12.2 lists what sits on
+that runner: the offline issue packet, the model PAT, the job-native
+`GITHUB_TOKEN` and the Actions runtime token. A prompt-injected
+session could send any of them to a host of its choosing, and no
+claim below reduces that possibility to zero.
+
+What the design does about each:
+
+- **The packet.** The snapshot fetches issues from public
+  repositories alone (`--visibility public`, evaluated by GitHub at
+  fetch time), and the packet step reads the bodies of those issues
+  and nothing else. A repository turned private between the two
+  reads, or an edit landing between them, can still place text in
+  the packet that is private by the time the session runs; the
+  window is seconds wide and the filter removes the common case,
+  which is a scan over an estate that holds private repositories.
+  Treat packet contents as disclosed once the session starts.
+- **The model PAT.** The caller provisions it with Copilot Requests
+  and no repository grants; the workflow checks its prefix and
+  cannot check its grants (§12.3). What the caller gave it bounds
+  its exposure.
+- **The job-native token.** `contents: read` on this repository,
+  expiring with the job.
+- **The runtime token.** Reaches this run's artifacts and can
+  replace one by name (§12.7), which is why every trusted job
+  fetches evidence by ID and digest and never by name.
+
+Nothing on the Propose runner can write to a repository, and §12.7
+keeps every write behind evidence the trusted jobs verify. The
+residual risks are model spend, disclosure of packet text and
+artifact interference, which the trusted jobs refuse by design.
 
 Block mode for Propose needs the model backend in the allow-list,
-which the organisation has not added; adding it would narrow the
+which the organisation has not added; adding it would shrink the
 exposure to the backend itself and is the first item in §10.
 
 The loader's pre hook runs in the two trusted jobs, with
@@ -288,8 +306,9 @@ not feed the trusted report.
 Session and result uploads use `always()`, but cancellation,
 runner loss or upload failure can prevent preservation. Do not
 promise a complete session log or evidence on every failure. Review
-artefact access and model data handling: packets may include private
-issue content, and logs can contain sensitive data despite redaction.
+artefact access and model data handling: the packet draws on
+public repositories but travels to an audit-mode runner (§7.1), and
+logs can contain sensitive data despite redaction.
 
 ### 7.3 Modular consumption
 

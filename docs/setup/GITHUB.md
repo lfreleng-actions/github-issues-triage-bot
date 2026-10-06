@@ -57,8 +57,9 @@ billing limits and model availability before scheduling runs.
 ## Caller example
 
 This App-less example supports dry-run reads within the job token's
-access. For organisation-wide private reads or live writes, add the
-App credentials from [shared setup](README.md).
+access. For organisation-wide reads or live writes, add the App
+credentials from [shared setup](README.md). The scan fetches issues
+from public repositories alone, whichever token reads.
 
 <!-- markdownlint-disable MD013 -->
 
@@ -146,11 +147,11 @@ bundled callers run them in block mode behind the organisation
 allow-list. The Propose job always audits: the model backend
 (`api.githubcopilot.com:443` and its enterprise endpoint) is outside
 that allow-list, and a session in block mode cannot start. Audit
-records traffic without blocking it, and
-[Design §7.1](../development/DESIGN.md#71-egress) states what that
-exposes on the Propose runner and what bounds it. Adding the backend
-to the organisation allow-list is the step that would let Propose
-block too.
+records traffic without blocking it; treat it as an accepted
+exposure, and read [Design §7.1](../development/DESIGN.md#71-egress)
+for what sits on that runner and what the design does about each
+item. Adding the backend to the organisation allow-list is the step
+that would let Propose block too.
 
 ## Failure modes
 

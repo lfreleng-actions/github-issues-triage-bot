@@ -51,6 +51,8 @@ endpoint = "repos/owner/repo/issues/1"
 write = False
 pages = False
 if args[:2] == ["search", "issues"]:
+    # The snapshot fetches issues from public repositories alone.
+    assert args[args.index("--visibility") + 1] == "public"
     result = [{
         **{key: issue[key] for key in ("number", "title", "labels")},
         "repository": {"name": "repo", "nameWithOwner": "owner/repo"},
