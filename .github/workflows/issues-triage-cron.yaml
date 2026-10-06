@@ -92,7 +92,7 @@ jobs:
       # and application actions, never an action in the agent job.
       # No client id permits dry-run fallback; a missing key fails
       # token creation before the agent runs.
-      github_app_client_id: ${{ vars.LF_TRIAGE_BOT_CLIENT_ID || '' }}
+      github_app_client_id: ${{ vars.BOT_APP_CLIENT_ID || '' }}
       # Run the pipeline with the assets from the triggering commit.
       assets_repository: ${{ github.repository }}
       assets_ref: ${{ github.sha }}
@@ -102,4 +102,4 @@ jobs:
       anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
       gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
       copilot_token: ${{ secrets.COPILOT_CLI_TOKEN }}
-      github_app_private_key: ${{ secrets.LF_TRIAGE_BOT_PRIVATE_KEY }}
+      github_app_private_key: ${{ secrets.BOT_APP_PRIVATE_KEY }}

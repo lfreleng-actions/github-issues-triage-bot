@@ -110,9 +110,12 @@ reads and an issue grant chosen for the path: `write` for live mode
 with successful proposal/export gates, otherwise `read`.
 
 A single-repository input scopes both installation tokens at mint
-time. Tokens expire after an hour. The local configuration uses
-**LF/RelEng Issues Triage Bot**, with repository-level
-`LF_TRIAGE_BOT_CLIENT_ID` and `LF_TRIAGE_BOT_PRIVATE_KEY`.
+time. Tokens expire after an hour. The calling workflow names the
+credentials by role, as every bot repository in the organisation
+does: `vars.BOT_APP_CLIENT_ID` and `secrets.BOT_APP_PRIVATE_KEY`.
+In this organisation the App behind them is **LF/RelEng Issues
+Triage Bot**, whose slug `config/bot.json` records and the pre-flight
+gate checks.
 
 Without an App, trusted jobs use their job-native token for dry-run
 reads within its access. That token does not grant organisation-wide

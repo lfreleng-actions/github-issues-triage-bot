@@ -56,10 +56,10 @@ App-token post actions. Its job-native `GITHUB_TOKEN` has
 `contents: read` and no other permissions.
 
 Installation tokens expire after an hour. The `repository` input
-also scopes both mints to that repository. In this organisation,
-**LF/RelEng Issues Triage Bot** uses repository-level
-`vars.LF_TRIAGE_BOT_CLIENT_ID` and
-`secrets.LF_TRIAGE_BOT_PRIVATE_KEY`.
+also scopes both mints to that repository. Every bot repository in the
+organisation names the credentials by role: `vars.BOT_APP_CLIENT_ID`
+and `secrets.BOT_APP_PRIVATE_KEY`. Here they hold the **LF/RelEng
+Issues Triage Bot** App, whose slug `config/bot.json` records.
 
 Without App credentials, trusted jobs use their job-native token
 for dry-run reads within its access; it does not grant organisation-wide
