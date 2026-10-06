@@ -3,7 +3,7 @@ SPDX-License-Identifier: Apache-2.0
 SPDX-FileCopyrightText: 2026 The Linux Foundation
 -->
 
-# GitHub (Copilot) engine setup
+# Copilot engine setup
 
 The workflow installs Copilot CLI `1.0.80` from npm and invokes it
 in programmatic mode. It reads an offline issue packet and emits
@@ -11,14 +11,13 @@ proposals; trusted jobs perform GitHub reads and writes.
 
 <!-- markdownlint-disable MD013 -->
 
-| Item | Value |
-| ---- | ----- |
-| `engine` input | `copilot` |
-| Secret | `copilot_token` |
-| Default model | `claude-sonnet-5` |
-| Harness | `@github/copilot`, locked in `tools/copilot-cli/` |
-| Turn ceiling | `max_turns` has no effect; the step timeout is 20 minutes |
-| Apply path | Separate trusted runner; see [Design §13.7](../development/DESIGN.md) |
+| Item            | Value                                                                 |
+| --------------- | --------------------------------------------------------------------- |
+| Secret          | `copilot_token`                                                       |
+| Default model   | `claude-opus-5.5`                                                     |
+| Harness         | `@github/copilot`, locked in `tools/copilot-cli/`                     |
+| Session ceiling | The step timeout is 20 minutes                                        |
+| Apply path      | Separate trusted runner; see [Design §12.7](../development/DESIGN.md) |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -74,7 +73,6 @@ jobs:
     uses: lfreleng-actions/github-issues-triage/.github/workflows/issues-triage.yaml@<commit-sha>  # vX.Y.Z
     with:
       org: 'your-org'
-      engine: 'copilot'
       dry_run: true
     secrets:
       copilot_token: ${{ secrets.COPILOT_CLI_TOKEN }}
@@ -87,13 +85,14 @@ The reusable workflow gives Propose's job-native token
 receives the App key or an installation token. Prepare uses the App
 to build the packet; Apply mints its token after verifying evidence.
 
-Override the model with the `model` input. An empty value selects
-`claude-sonnet-5`; check your entitlement before choosing another.
+Override the model with the `model` input, which defaults to
+`claude-opus-5.5`. It must be a bare lower-case identifier; check
+your entitlement before choosing another.
 
 ## Check before live use
 
-Copilot is the active validation target. The local suite tests
-contracts, not remote authentication or live writes:
+The local suite tests contracts, not remote authentication or live
+writes:
 
 ```bash
 uv run python -B -m unittest discover -s tests -v
@@ -104,18 +103,17 @@ For further validation, a maintainer can run the manual dry-run
 against a reviewed, trusted ref:
 
 ```bash
-gh workflow run testing.yaml -f engine=copilot
+gh workflow run testing.yaml
 ```
 
-The three-job Copilot dry-run and the first live run both passed;
+The three-job dry-run and the first live run both passed;
 see
 [Design §11](../development/DESIGN.md#11-rollout-and-validation)
 for run evidence and remaining gaps. The live run minted the
 write-scoped token and applied labels, `Type` and `Priority`.
 `testing.yaml` passes no App credentials and cannot verify writes.
 Scheduled runs apply changes; disable the caller if problems arise.
-Manual dispatch retains its dry-run default. Claude and Gemini remain
-outside active validation.
+Manual dispatch retains its dry-run default.
 
 Inspect the preparation evidence, separate session artefact and
 final results. Check proposal/apply outcomes alongside the label
@@ -153,14 +151,14 @@ mode. Audit records traffic without blocking it.
 
 <!-- markdownlint-disable MD013 -->
 
-| Symptom | Check or recovery |
-| ------- | ----------------- |
-| PAT format guard fails | Supply a `github_pat_` PAT through `copilot_token`, then review its permissions. |
-| CLI authentication or model failure | Check expiry, Copilot Requests, owner entitlement and model access; prefix acceptance proves none of these. |
-| Session tries to use `gh` | The session must use the offline packet; do not add an App token to make the command work. |
-| Missing or malformed summary | Inspect the separate session artefact; Apply must not consume failed-session proposals. |
-| Missing evidence ID or digest mismatch | Stop and investigate provenance; do not substitute an artefact with a matching name. |
-| Live configuration read failure | Fix App access or the API failure; live mode must fail rather than drop unreadable configuration. |
-| Partial writes | Inspect current state and `apply-result.json`; use targeted recovery, often `retriage: true`, without overwriting human Priority. |
+| Symptom                                | Check or recovery                                                                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| PAT format guard fails                 | Supply a `github_pat_` PAT through `copilot_token`, then review its permissions.                                                  |
+| CLI authentication or model failure    | Check expiry, Copilot Requests, owner entitlement and model access; prefix acceptance proves none of these.                       |
+| Session tries to use `gh`              | The session must use the offline packet; do not add an App token to make the command work.                                        |
+| Missing or malformed summary           | Inspect the separate session artefact; Apply must not consume failed-session proposals.                                           |
+| Missing evidence ID or digest mismatch | Stop and investigate provenance; do not substitute an artefact with a matching name.                                              |
+| Live configuration read failure        | Fix App access or the API failure; live mode must fail rather than drop unreadable configuration.                                 |
+| Partial writes                         | Inspect current state and `apply-result.json`; use targeted recovery, often `retriage: true`, without overwriting human Priority. |
 
 <!-- markdownlint-enable MD013 -->

@@ -11,10 +11,10 @@ SPDX-FileCopyrightText: 2026 The Linux Foundation
 **Last updated:** 2026-09-18
 
 This document describes the current workflow and helper scripts.
-§13.7 defines the prepare/propose/apply trust boundary.
+§12.7 defines the prepare/propose/apply trust boundary.
 [§11](#11-rollout-and-validation) records validation evidence and
-its limits. Copilot is the active validation target; Claude and
-Gemini remain selectable but unverified.
+its limits. Copilot CLI is the harness; §12 describes it in
+detail.
 
 ## 1. Problem Statement
 
@@ -31,10 +31,9 @@ open issues, asks an agent to propose category labels, priority and
 type, and delegates validation and writes to trusted code. Snapshots
 and a diff report show observed label movement.
 
-The schedule uses Copilot in live mode, applying validated labels,
-Priority and Type. Manual dispatch and reusable-workflow consumers
-keep their dry-run defaults. The reusable workflow defaults to
-`engine: claude`, so consumers should select `copilot` explicitly.
+The schedule runs live, applying validated labels, Priority and
+Type. Manual dispatch and reusable-workflow consumers keep their
+dry-run defaults.
 
 ### Non-goals
 
@@ -47,31 +46,27 @@ keep their dry-run defaults. The reusable workflow defaults to
 
 ## 3. Model Access
 
-### 3.1 GitHub Copilot
-
 The workflow invokes Copilot CLI in programmatic mode with a
 personal fine-grained PAT. It requires Copilot Requests and no
 repository permissions. The workflow rejects caller-native
 `GITHUB_TOKEN`, classic PATs and App installation tokens as model
-credentials. See §13.3 and [Copilot setup](../setup/GITHUB.md).
+credentials. See §12.3 and [Copilot setup](../setup/GITHUB.md).
 
-### 3.2 Anthropic API
-
-The retained Claude path uses `anthropic_api_key` with
-`anthropics/claude-code-action`. Its current proposal export and
-runtime behaviour still need verification. Keep any future validation in a
-dedicated workspace with a spend cap; no Claude run forms part of
-this rewrite's active validation.
+The `model` input names the Copilot model the session uses and
+defaults to `claude-opus-5.5`. Prepare rejects any value that is
+not a bare lower-case identifier before it can reach the CLI's
+command line.
 
 ## 4. Agent Harness
 
 ### 4.1 Selection
 
-The workflow keeps provider-specific invocation inside Propose.
-Prepare, policy validation, GitHub writes and reporting stay
-engine-neutral. A bespoke model tool loop would duplicate the
-harnesses; replacing the pipeline with Agentic Workflows would be a
-separate architectural decision.
+The workflow keeps the harness invocation inside Propose. Prepare,
+policy validation, GitHub writes and reporting never read the
+model or touch the CLI, so a harness change touches one job
+alone. A bespoke model tool loop would duplicate the CLI; replacing
+the pipeline with Agentic Workflows would be a separate
+architectural decision.
 
 ### 4.2 Invocation contract
 
@@ -79,18 +74,17 @@ The agent reads `artefacts/issue-packet.json` and the assembled
 policy prompt. It emits a summary containing a fenced JSON proposal.
 It does not need GitHub issue API access or an App credential.
 
-Copilot uses a pinned npm version. Claude and Gemini use SHA-pinned
-actions. Tool approval rules are defence in depth, not a sandbox
-or proof that the session cannot reach credentials. The trusted
-applier never executes session-provided code.
+The CLI installs from a committed lockfile. Tool approval rules are
+defence in depth, not a sandbox or proof that the session cannot
+reach credentials. The trusted applier never executes
+session-provided code.
 
 ### 4.3 Cost control
 
 Prepare skips Propose when `skip_agent` is true, or when no unlabelled
 issues exist and `retriage` is false. One session handles the
-packet rather than one session per issue. Copilot has a 20-minute
-step timeout inside a 30-minute job; `max_turns` has no effect on it.
-The retained Claude invocation alone consumes `max_turns`.
+packet rather than one session per issue. The session has a
+20-minute step timeout inside a 30-minute job.
 
 ## 5. GitHub Authentication and Permissions
 
@@ -128,8 +122,7 @@ installation token or App-token post action.
 The Copilot PAT is for model requests, not repository writes. Its
 prefix does not prove its permissions; caller provisioning remains
 part of the trust boundary. The workflow accepts no PAT substitute for the
-App private-key secret. Anthropic and Gemini API keys are separate
-model credentials on their retained, unverified paths.
+App private-key secret.
 
 ## 6. Triage Policy
 
@@ -238,8 +231,10 @@ more than 100 eligible targets before any per-issue API reads. Apply
 refuses more than 100 proposal entries before configuration reads or
 writes. Neither path samples a larger batch: use the
 repository restriction or exclusions to narrow it. GitHub helper
-commands time out after 30 seconds; network latency can still exhaust
-a job deadline, so these bounds are not a completion-time guarantee.
+commands time out after 60 seconds, and a read retries a transient
+5xx or timeout twice before failing; a write runs once. Network
+latency can still exhaust a job deadline, so these bounds are not a
+completion-time guarantee.
 
 Exclusions use repository names, trim whitespace, drop blank lines
 and normalize case. File-based lists allow `#` comments; a non-empty
@@ -268,11 +263,11 @@ after-state; the existence of `after.json` does not suffice. Without
 it, the report is incomplete. The diff observes labels, not
 priority/type changes, and does not prove which actor caused a
 change. `apply-result.json` records apply outcomes; session logs do
-not feed the trusted report or its cost/turn telemetry.
+not feed the trusted report.
 
 Session and result uploads use `always()`, but cancellation,
 runner loss or upload failure can prevent preservation. Do not
-promise a complete transcript or evidence on every failure. Review
+promise a complete session log or evidence on every failure. Review
 artefact access and model data handling: packets may include private
 issue content, and logs can contain sensitive data despite redaction.
 
@@ -299,14 +294,27 @@ the applier's code revision.
 prompt/triage.md                           # classification policy
 config/excluded-repos.txt                  # bundled exclusions
 scripts/snapshot.sh                       # bounded open-issue search
+scripts/bot_github.py                      # shared gh plumbing (template)
+scripts/bot_evidence.py                    # shared bounded reads, digests
+scripts/artifact_fetch.py                  # shared, unused here (template)
+scripts/preflight.py                       # shared App installation gate
+scripts/ledger.py                          # shared, unused here (template)
 scripts/triage_evidence.py                 # packet, verification, extraction
 scripts/triage_policy.py                   # deterministic proposal checks
-scripts/triage_github.py                   # GitHub adapters
+scripts/triage_github.py                   # triage-specific GitHub reads/writes
 scripts/apply_triage.py                    # validation and apply outcomes
 scripts/triage_report.py                   # snapshot diff and report
 tests/                                    # offline regression tests
 docs/                                     # MkDocs site and setup guides
 ```
+
+Every bot carries five shared modules, copied verbatim from
+`lfreleng-actions/bots-template`: `bot_github.py`, `bot_evidence.py`,
+`artifact_fetch.py`, `preflight.py` and `ledger.py`. Triage calls
+`bot_github`, `bot_evidence` and `preflight`. It has no per-target
+memory, so `ledger.py` ships unused to keep the copied set whole;
+`artifact_fetch.py` likewise, since Apply downloads the session
+artefact whole and copies out nothing but its bounded summary.
 
 PR plumbing skips the agent and passes no model or App secrets.
 Manual agent validation must use a reviewed ref; a dry-run still
@@ -388,7 +396,7 @@ confirmed labels, `Type` and `Priority` on sampled issues. Apply took
 That closes the untested path: live token minting, label
 writes, and issue-field and type writes. It does not exercise partial
 write recovery, rate-limit behaviour or a batch near the 100-issue
-cap. Keep Claude and Gemini outside active validation.
+cap.
 
 [production-validation]: https://github.com/lfreleng-actions/github-issues-triage/actions/runs/35318520607
 [live-validation]: https://github.com/lfreleng-actions/github-issues-triage/actions/runs/35324225186
@@ -414,32 +422,21 @@ explicit repository permissions and proposal-success conditions.
 Recheck this workaround on upgrades: declared input defaults
 can overwrite the environment values.
 
-## 12. Google Gemini
+## 12. GitHub Copilot
 
-The retained path uses `google-github-actions/run-gemini-cli`,
-`gemini_api_key`, and default model `gemini-3.5-flash-lite`. It gets
-the offline packet, not an App credential, and exports the action's
-summary as the proposal source. The current settings allow file and
-`cat`/`jq` reads; they do not pass `max_turns`.
-
-Proposal export, runtime behaviour and telemetry fidelity remain
-unverified. The workflow does not copy a raw Gemini transcript into
-the trusted report. This engine is outside active validation.
-
-## 13. GitHub Copilot
-
-### 13.1 Harness
+### 12.1 Harness
 
 The workflow installs `@github/copilot` at `1.0.80` with Node 22 and
 invokes `copilot --prompt`. `tools/copilot-cli/package-lock.json` pins
 that version and every package beneath it by hash; the workflow runs
 `npm ci --ignore-scripts` on it from the verified assets checkout.
-`model` defaults to `claude-sonnet-5`.
+The `model` input selects the model; the scheduled caller maps a
+display name chosen on dispatch to its identifier.
 CLI logs and the `--share` summary go to the separate session
 artefact. The summary supplies the proposal; logs do not permit
 writes.
 
-### 13.2 Session containment
+### 12.2 Session containment
 
 Propose offers Copilot shell tools, pre-approves `cat` and `jq`,
 and denies `gh`, `git` and the write tool. It disables built-in
@@ -453,7 +450,7 @@ not guarantee secrecy after a value transformation.
 Consider the model PAT, packet and Actions runtime credentials
 exposed to the untrusted runner. A wrong label is not a worst-case
 bound; model spend, data disclosure and artefact interference remain
-risks. §13.7 protects the apply path without relying on those rules.
+risks. §12.7 protects the apply path without relying on those rules.
 
 Run 35324225186 measured that boundary rather than assuming it. The
 session ran `sed` and `grep`, which the allow list did not name, and
@@ -484,7 +481,7 @@ in-place overwrite that SSD wear-levelling breaks, and the same issue
 bodies travel in the evidence artefact by design. Confidentiality of
 issue content is a retention question, not an erasure one.
 
-### 13.3 Authentication and billing
+### 12.3 Authentication and billing
 
 `copilot_token` must be a personal fine-grained PAT with Copilot
 Requests and no repository permissions. The step sets
@@ -502,29 +499,28 @@ model. Usage draws on that entitlement; expiry, rotation and billing
 limits need operational ownership. App installation tokens are not
 an alternative model-authentication route in this workflow.
 
-### 13.4 Validation work
+### 12.4 Validation work
 
 See [§11](#11-rollout-and-validation) for the successful three-job
 Copilot dry-run and remaining validation limits. Inspect proposal
-outcomes and audit network endpoints for the pinned CLI. No Claude
-or Gemini run belongs to this validation effort.
+outcomes and audit network endpoints for the pinned CLI.
 
-### 13.5 Open questions
+### 12.5 Open questions
 
 Measure classification quality and spend on a representative backlog.
 The default model is a configuration choice, not evidence of the
 cheapest or most accurate option. Remote live App minting and
 writes remain pending (§10–§11).
 
-### 13.6 Scheduled identity
+### 12.6 Scheduled identity
 
-The schedule selects Copilot and applies changes. A dedicated App
+The schedule applies changes. A dedicated App
 handles trusted repository reads and writes; a separate personal PAT
 handles model requests. Do not combine these roles by passing an App
 key or repository-capable PAT to Propose. Rotate the model PAT before
 expiry rather than treating prefix acceptance as a health check.
 
-### 13.7 Prepare, propose and apply
+### 12.7 Prepare, propose and apply
 
 #### Trusted preparation
 
@@ -552,7 +548,7 @@ Propose checks out Prepare's SHA and downloads the packet using
 Prepare's evidence ID. No action in this job receives the App key
 or an installation token. It runs no App-token action that could expose the key
 after the session. Its native `GITHUB_TOKEN` grants `contents: read`
-and no other permissions. Copilot gets the PAT described in §13.3
+and no other permissions. Copilot gets the PAT described in §12.3
 for model access, without repository permissions.
 
 Treat the session artefact and `session_id` output as untrusted data,
@@ -569,7 +565,8 @@ It checks out that SHA, downloads evidence by producer ID into
 `evidence/`, and verifies snapshot/exclusion bytes against Prepare's
 digests before copying them or minting any App token.
 
-`scripts/triage_evidence.py` checks bounded regular files without
+`scripts/triage_evidence.py` delegates to the shared
+`bot_evidence.verify`, which checks bounded regular files without
 following final symlinks: 16 MiB for the snapshot and 1 MiB for
 exclusions. A forged sidecar digest or replacement artefact with the
 same name cannot supply the trusted expected values. Missing or
@@ -636,7 +633,7 @@ Fresh reads reduce stale decisions without eliminating the race
 between validation and writes. Cancellation also cannot undo a
 request that already succeeded.
 
-### 13.8 The pre-flight gate
+### 12.8 The pre-flight gate
 
 The contract tests in `tests/test_workflow.py` run when a pull
 request changes the workflow. A scheduled run executes whatever is on

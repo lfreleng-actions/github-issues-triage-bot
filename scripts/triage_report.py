@@ -14,9 +14,7 @@ output). This script diffs the two snapshots and emits:
 - a machine-readable JSON report with the same content
 
 The diff is the ground truth for what the run changed: the report
-reflects observed label movement, not the agent's own claims. When
-the optional session transcript is present, the script folds its
-cost telemetry (turns, token usage) into the report.
+reflects observed label movement, not the agent's own claims.
 """
 
 from __future__ import annotations
@@ -27,7 +25,7 @@ import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 UNKNOWN = "unknown"
 
@@ -68,29 +66,6 @@ def load_snapshot(path: Path) -> dict[tuple[str, int], Issue]:
         )
         issues[issue.key] = issue
     return issues
-
-
-def load_transcript_stats(path: Path) -> dict[str, Any]:
-    """Pull cost telemetry out of a Claude Code execution log.
-
-    The log format is an implementation detail of claude-code-action,
-    so parse defensively: harvest recognisable telemetry fields from
-    entries when present, and degrade to an empty mapping on anything
-    unexpected.
-    """
-    try:
-        raw: Any = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    entries: list[Any] = cast("list[Any]", raw) if isinstance(raw, list) else [raw]
-    stats: dict[str, Any] = {}
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        for field in ("num_turns", "total_cost_usd", "usage", "duration_ms"):
-            if field in entry:
-                stats[field] = entry[field]
-    return stats
 
 
 @dataclass(frozen=True)
@@ -164,7 +139,6 @@ def _labels_cell(labels: Iterable[str]) -> str:
 def render_markdown(
     rows: list[dict[str, Any]],
     changes: list[IssueChange] | None,
-    stats: dict[str, Any],
     dry_run: bool,
 ) -> str:
     """Render the full Markdown report.
@@ -183,10 +157,6 @@ def render_markdown(
         ]
     else:
         lines += [f"- **Issues changed:** {len(changes)}"]
-    if "num_turns" in stats:
-        lines += [f"- **Agent turns:** {stats['num_turns']}"]
-    if "total_cost_usd" in stats:
-        lines += [f"- **Session cost (USD):** {stats['total_cost_usd']}"]
     lines += ["", "## Untriaged issues by repository", ""]
     lines += [
         "| Repository | Open | Untriaged before | Untriaged after |",
@@ -204,7 +174,7 @@ def render_markdown(
         lines += [
             "Unknown: the after-snapshot is missing, so the run"
             " cannot verify label movement. Consult the session"
-            " transcript and workflow logs."
+            " summary and workflow logs."
         ]
     elif changes:
         # The column reports what appeared since the before-snapshot,
@@ -247,7 +217,6 @@ def render_markdown(
 def build_json(
     rows: list[dict[str, Any]],
     changes: list[IssueChange] | None,
-    stats: dict[str, Any],
     dry_run: bool,
 ) -> dict[str, Any]:
     """Assemble the machine-readable report."""
@@ -267,7 +236,6 @@ def build_json(
             }
             for c in changes or []
         ],
-        "session": stats,
     }
 
 
@@ -276,7 +244,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--before", type=Path, required=True)
     parser.add_argument("--after", type=Path)
-    parser.add_argument("--transcript", type=Path)
     parser.add_argument("--output-md", type=Path, required=True)
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true")
@@ -284,16 +251,13 @@ def main() -> None:
 
     before = load_snapshot(args.before)
     after = None if args.after is None else load_snapshot(args.after)
-    stats: dict[str, Any] = {}
-    if args.transcript is not None and args.transcript.exists():
-        stats = load_transcript_stats(args.transcript)
 
     changes = None if after is None else diff_snapshots(before, after)
     rows = repo_rows(before, after)
-    markdown = render_markdown(rows, changes, stats, args.dry_run)
+    markdown = render_markdown(rows, changes, args.dry_run)
     args.output_md.write_text(markdown, encoding="utf-8")
     args.output_json.write_text(
-        json.dumps(build_json(rows, changes, stats, args.dry_run), indent=2) + "\n",
+        json.dumps(build_json(rows, changes, args.dry_run), indent=2) + "\n",
         encoding="utf-8",
     )
 

@@ -12,7 +12,9 @@ preserved; a non-null Priority tells the proposing agent to skip that issue.
 
 ``verify --directory evidence --before-sha256 HEX --exclusions-sha256 HEX``
 checks exact bytes against digests supplied by trusted prepare-job outputs,
-never against digests from the agent or the downloaded artifact.
+never against digests from the agent or the downloaded artifact. The check
+itself is the shared ``bot_evidence.verify``; this wrapper names the two
+files and gives each its own byte cap.
 
 ``proposal --directory session --output artefacts/session-summary.md`` copies
 only the summary, without interpreting its content or importing other files.
@@ -22,42 +24,18 @@ Verification and proposal extraction are offline and require no credentials.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import os
-import re
-import stat
 from pathlib import Path
 from typing import Any, cast
 
-import triage_github as github
+import bot_github as github
+from bot_evidence import MAX_SUMMARY_BYTES, read_regular
+from bot_evidence import verify as verify_evidence
+from triage_github import existing_priority
 from triage_policy import MAX_BATCH_ISSUES, REPO_RE
 
 MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
 MAX_EXCLUSIONS_BYTES = 1024 * 1024
-MAX_PROPOSAL_BYTES = 8 * 1024 * 1024
-SHA256_RE = re.compile(r"[0-9a-fA-F]{64}")
-
-
-def read_regular(path: Path, limit: int) -> bytes:
-    """Read bounded bytes from a regular file without following a final symlink."""
-    directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        # NONBLOCK lets fstat reject a FIFO without waiting for a writer. Check
-        # the opened descriptor, not a prior stat that could race a replacement.
-        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
-        with os.fdopen(os.open(path.name, flags, dir_fd=directory_fd), "rb") as source:
-            info = os.fstat(source.fileno())
-            if not stat.S_ISREG(info.st_mode):
-                raise ValueError(f"{path.name} must be a regular non-symlink file")
-            if info.st_size > limit:
-                raise ValueError(f"{path.name} exceeds the {limit}-byte limit")
-            content = source.read(limit + 1)
-            if len(content) > limit:
-                raise ValueError(f"{path.name} exceeds the {limit}-byte limit")
-            return content
-    finally:
-        os.close(directory_fd)
 
 
 def snapshot_membership(path: Path, *, retriage: bool = False) -> dict[str, set[int]]:
@@ -165,7 +143,7 @@ def issue_details(repo: str, number: int) -> dict[str, Any]:
         "body": body,
         "state": state,
         "labels": labels,
-        "priority": github.existing_priority(repo, number),
+        "priority": existing_priority(repo, number),
         "type": type_name,
     }
 
@@ -193,21 +171,24 @@ def build_packet(snapshot: Path, *, retriage: bool = False) -> dict[str, Any]:
 
 
 def verify(directory: Path, before_sha256: str, exclusions_sha256: str) -> None:
-    """Authenticate the two fixed evidence files against independently trusted hashes."""
-    for name, digest, limit in (
-        ("before.json", before_sha256, MAX_SNAPSHOT_BYTES),
-        ("excluded-repos.txt", exclusions_sha256, MAX_EXCLUSIONS_BYTES),
-    ):
-        if not SHA256_RE.fullmatch(digest):
-            raise ValueError(f"trusted SHA-256 for {name} must contain 64 hex digits")
-        content = read_regular(directory / name, limit)
-        if hashlib.sha256(content).hexdigest() != digest.lower():
-            raise ValueError(f"SHA-256 mismatch for {name}")
+    """Authenticate the two fixed evidence files against independently trusted hashes.
+
+    The exclusions list keeps its own, far smaller cap: a one-line
+    file per excluded repository has no business approaching the
+    snapshot's limit.
+    """
+    verify_evidence(
+        directory,
+        [
+            ("before.json", before_sha256, MAX_SNAPSHOT_BYTES),
+            ("excluded-repos.txt", exclusions_sha256, MAX_EXCLUSIONS_BYTES),
+        ],
+    )
 
 
 def copy_proposal(directory: Path, output: Path) -> None:
     """Copy only the bounded summary bytes into the caller's trusted destination."""
-    content = read_regular(directory / "session-summary.md", MAX_PROPOSAL_BYTES)
+    content = read_regular(directory / "session-summary.md", MAX_SUMMARY_BYTES)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(content)
 

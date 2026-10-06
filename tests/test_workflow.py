@@ -391,9 +391,44 @@ class WorkflowContractTests(WorkflowCase):
             reusable["on"]["workflow_call"]["inputs"]["dry_run"]["default"], "true"
         )
 
+    def test_model_defaults_to_an_identifier_and_the_cron_maps_display_names(
+        self,
+    ) -> None:
+        """The CLI receives the caller's model; the cron dispatch picks by name."""
+        reusable: dict[str, Any] = yaml.load(
+            WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader
+        )
+        model = reusable["on"]["workflow_call"]["inputs"]["model"]
+        self.assertEqual(model["default"], "claude-opus-5.5")
+        self.assertEqual(model["type"], "string")
+        self.assertEqual(
+            self.step("propose", "Run triage agent")["env"]["MODEL"],
+            "${{ inputs.model }}",
+        )
+        self.assert_before("prepare", "Check inputs", "Require App for live runs")
+        cron: dict[str, Any] = yaml.load(
+            (WORKFLOW.parent / "issues-triage-cron.yaml").read_text(encoding="utf-8"),
+            Loader=yaml.BaseLoader,
+        )
+        choice = cron["on"]["workflow_dispatch"]["inputs"]["model"]
+        self.assertEqual(choice["type"], "choice")
+        self.assertIn(choice["default"], choice["options"])
+        self.assertEqual(cron["jobs"]["triage"]["needs"], "options")
+        self.assertEqual(
+            cron["jobs"]["triage"]["with"]["model"],
+            "${{ needs.options.outputs.model }}",
+        )
+        self.assertEqual(cron["jobs"]["options"]["permissions"], {})
+        mapping: str = next(
+            step["run"] for step in cron["jobs"]["options"]["steps"] if "run" in step
+        )
+        for option in choice["options"]:
+            with self.subTest(option=option):
+                self.assertIn(f"'{option}')", mapping)
+
     def test_copilot_policy_declares_reads_and_still_denies_writes(self) -> None:
         """Declaring auto-approved reads must not relax the enforced denials."""
-        script: str = self.step("propose", "Run triage agent (Copilot)")["run"]
+        script: str = self.step("propose", "Run triage agent")["run"]
         self.assertIn("for cmd in cat jq grep head tail wc; do", script)
         self.assertIn('allow="$allow,shell($cmd),shell($cmd:*)"', script)
         self.assertIn('--allow-tool="${allow#,}"', script)
@@ -429,9 +464,7 @@ class WorkflowContractTests(WorkflowCase):
             self.assertNotIn("hasInstallScript", entry, name)
         self.assert_before("propose", "Require pinned assets", "Install Copilot CLI")
         self.assert_before("propose", "Checkout prompt assets", "Install Copilot CLI")
-        self.assert_before(
-            "propose", "Install Copilot CLI", "Run triage agent (Copilot)"
-        )
+        self.assert_before("propose", "Install Copilot CLI", "Run triage agent")
 
     def test_allow_list_blesses_no_command_capable_interpreter(self) -> None:
         """An allowed interpreter would bypass the write, gh and git denials.
@@ -441,7 +474,7 @@ class WorkflowContractTests(WorkflowCase):
         and GNU sed's `w` command writes files, so neither belongs in a
         list whose stated purpose is read-only access.
         """
-        script: str = self.step("propose", "Run triage agent (Copilot)")["run"]
+        script: str = self.step("propose", "Run triage agent")["run"]
         declared = re.search(r"for cmd in ([^;]+); do", script)
         self.assertIsNotNone(declared)
         assert declared is not None
@@ -489,9 +522,9 @@ class WorkflowContractTests(WorkflowCase):
     def test_scratch_cleanup_runs_on_the_agent_runner_after_the_session(self) -> None:
         """A later job cannot reach this scratch, and failures must still clear it."""
         cleanup = self.step("propose", "Clear session scratch files")
-        self.assert_expression(cleanup["if"], "always() && inputs.engine == 'copilot'")
+        self.assert_expression(cleanup["if"], "always()")
         self.assertEqual(cleanup["env"], {"COPILOT_HOME": "${{ runner.temp }}/copilot"})
-        self.assert_before("propose", "agent-copilot", "Clear session scratch files")
+        self.assert_before("propose", "agent", "Clear session scratch files")
         # Clearing must not reach the proposal the next job consumes.
         self.assertNotIn("artefacts", cleanup["run"].replace("artefacts/ is", ""))
 
@@ -860,7 +893,13 @@ class WorkflowScriptTests(WorkflowCase):
         """Copy trusted scripts so no executed step can modify the real checkout."""
         scripts = self.root / "triage-assets" / "scripts"
         scripts.mkdir(parents=True)
-        for name in ("triage_evidence.py", "triage_github.py", "triage_policy.py"):
+        for name in (
+            "bot_evidence.py",
+            "bot_github.py",
+            "triage_evidence.py",
+            "triage_github.py",
+            "triage_policy.py",
+        ):
             shutil.copyfile(ROOT / "scripts" / name, scripts / name)
 
     def prepare_evidence(self) -> dict[str, str]:
@@ -1005,7 +1044,7 @@ class WorkflowScriptTests(WorkflowCase):
                 arguments.unlink(missing_ok=True)
                 result = self.run_step(
                     "propose",
-                    "agent-copilot",
+                    "agent",
                     COPILOT_GITHUB_TOKEN=prefix + "test-only-not-a-real-token",
                     COPILOT_HOME=str(self.root / "copilot-home"),
                     MODEL="test-model",
@@ -1021,6 +1060,22 @@ class WorkflowScriptTests(WorkflowCase):
                         "::error::Use a model-only fine-grained Copilot PAT",
                         result.stdout,
                     )
+
+    def test_model_input_is_checked_before_it_reaches_a_command_line(self) -> None:
+        """Only a bare lower-case identifier may reach the CLI's --model flag."""
+        for model, accepted in (
+            ("claude-opus-5.5", True),
+            ("gpt-6-astra", True),
+            ("", False),
+            ("Claude Opus 5.5", False),
+            ("model --allow-all-tools", False),
+            ("a;b", False),
+        ):
+            with self.subTest(model=model):
+                result = self.run_step("prepare", "Check inputs", MODEL=model)
+                self.assertEqual(result.returncode == 0, accepted, result.stderr)
+                if not accepted:
+                    self.assertIn("::error::model must be", result.stdout)
 
     def test_digest_script_hashes_exact_prepared_bytes(self) -> None:
         """Trusted outputs cover both snapshot and effective scope, including newlines."""
@@ -1135,6 +1190,8 @@ class WorkflowScriptTests(WorkflowCase):
         for name in (
             "before.json",
             "excluded-repos.txt",
+            "bot_evidence.py",
+            "bot_github.py",
             "triage_evidence.py",
             "triage_policy.py",
             "sitecustomize.py",

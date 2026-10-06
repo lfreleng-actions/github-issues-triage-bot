@@ -16,14 +16,10 @@ on:
         description: 'Target owner; live runs require an organisation App'
         required: true
         type: string
-      engine:
-        description: 'Proposal engine: copilot, claude, or gemini'
-        type: string
-        default: 'claude'
       model:
-        description: 'Model identifier; empty selects the engine default'
+        description: 'Copilot CLI model identifier'
         type: string
-        default: ''
+        default: 'claude-opus-5.5'
       dry_run:
         description: 'Validate proposals without applying changes'
         type: boolean
@@ -44,10 +40,7 @@ on:
         description: 'Comma-separated repos to skip (overrides bundled list)'
         type: string
         default: ''
-      max_turns:
-        description: 'Turn ceiling; Copilot uses its step timeout instead'
-        type: string
-        default: '80'
+
       egress_policy:
         description: 'harden-runner egress mode: audit or block'
         type: string
@@ -71,12 +64,6 @@ on:
         type: string
         default: ''
     secrets:
-      anthropic_api_key:
-        description: 'Anthropic API key for the unverified Claude engine'
-        required: false
-      gemini_api_key:
-        description: 'Gemini API key for the unverified Gemini engine'
-        required: false
       copilot_token:
         description: >-
           Personal fine-grained PAT with Copilot Requests and no
@@ -120,7 +107,6 @@ jobs:
       before_sha256: "${{ steps.digests.outputs.before }}"
       exclusions_sha256: "${{ steps.digests.outputs.exclusions }}"
       run_agent: "${{ steps.before.outputs.run_agent }}"
-      model: "${{ steps.model.outputs.model }}"
     steps:
       - name: 'Load egress allow-list'
         if: inputs.egress_policy == 'block'
@@ -152,19 +138,12 @@ jobs:
               output.write(f'namespace={namespace}\n')
           PY
 
-      - name: 'Resolve engine and model'
-        id: model
+      - name: 'Check inputs'
         env:
-          ENGINE: "${{ inputs.engine }}"
           MODEL: "${{ inputs.model }}"
         run: |
-          case "$ENGINE" in
-            claude) default_model='claude-opus-5' ;;
-            gemini) default_model='gemini-3.5-flash-lite' ;;
-            copilot) default_model='claude-sonnet-5' ;;
-            *) echo '::error::Unknown triage engine'; exit 1 ;;
-          esac
-          echo "model=${MODEL:-$default_model}" >> "$GITHUB_OUTPUT"
+          [[ "$MODEL" =~ ^[a-z0-9.-]+$ ]] || {
+            echo '::error::model must be a lower-case identifier'; exit 1; }
 
       - name: 'Require App for live runs'
         if: ${{ !inputs.dry_run && inputs.github_app_client_id == '' }}
@@ -202,7 +181,7 @@ jobs:
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
-      # Pre-flight gate (docs/development/DESIGN.md section 13.8). The
+      # Pre-flight gate (docs/development/DESIGN.md section 12.8). The
       # contract tests and zizmor run again here, from the pinned
       # assets, so a drift merged into the workflow fails this run
       # before any token exists. The config check reads the credential
@@ -379,7 +358,6 @@ jobs:
           path: 'artefacts'
 
       - name: 'Assemble prompt'
-        id: prompt
         env:
           ORG: "${{ inputs.org }}"
           DRY_RUN: "${{ inputs.dry_run }}"
@@ -393,47 +371,8 @@ jobs:
             printf 'Dry run: %s; retriage: %s\n' "$DRY_RUN" "$RETRIAGE"
             printf 'Read artefacts/issue-packet.json for the complete scan.\n'
           } > artefacts/prompt.md
-          {
-            echo 'prompt<<TRIAGE_PROMPT_EOF'
-            cat artefacts/prompt.md
-            echo 'TRIAGE_PROMPT_EOF'
-          } >> "$GITHUB_OUTPUT"
 
-      # Legacy engines remain unverified. They receive the same
-      # offline packet and no App key or installation token.
-      - name: 'Run triage agent (Claude)'
-        id: agent
-        if: inputs.engine == 'claude'
-        timeout-minutes: 20
-        # yamllint disable-line rule:line-length
-        uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829 # v1.0.236
-        with:
-          anthropic_api_key: "${{ secrets.anthropic_api_key }}"
-          github_token: "${{ github.token }}"
-          prompt: "${{ steps.prompt.outputs.prompt }}"
-          claude_args: >-
-            --model ${{ needs.prepare.outputs.model }}
-            --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Bash(cat:*),Bash(jq:*)"
-
-      - name: 'Run triage agent (Gemini)'
-        id: agent-gemini
-        if: inputs.engine == 'gemini'
-        timeout-minutes: 20
-        # yamllint disable-line rule:line-length
-        uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
-        with:
-          gemini_api_key: "${{ secrets.gemini_api_key }}"
-          gemini_model: "${{ needs.prepare.outputs.model }}"
-          gemini_cli_version: '0.55.1'
-          prompt: "${{ steps.prompt.outputs.prompt }}"
-          settings: >-
-            {"tools":{"core":["read_file","run_shell_command(cat)",
-            "run_shell_command(jq)"]}}
-          upload_artifacts: false
-
-      - name: 'Set up Node.js (Copilot)'
-        if: inputs.engine == 'copilot'
+      - name: 'Set up Node.js'
         # yamllint disable-line rule:line-length
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -441,7 +380,6 @@ jobs:
           package-manager-cache: false
 
       - name: 'Install Copilot CLI'
-        if: inputs.engine == 'copilot'
         env:
           PIN_DIR: 'triage-assets/tools/copilot-cli'
         run: |
@@ -458,14 +396,13 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           echo "$dest/node_modules/.bin" >> "$GITHUB_PATH"
 
-      - name: 'Run triage agent (Copilot)'
-        id: agent-copilot
-        if: inputs.engine == 'copilot'
+      - name: 'Run triage agent'
+        id: agent
         timeout-minutes: 20
         env:
           COPILOT_GITHUB_TOKEN: "${{ secrets.copilot_token }}"
           COPILOT_HOME: "${{ runner.temp }}/copilot"
-          MODEL: "${{ needs.prepare.outputs.model }}"
+          MODEL: "${{ inputs.model }}"
         run: |
           # The prefix rejects native/classic tokens, not extra PAT
           # grants. The caller must provision Copilot Requests only.
@@ -493,7 +430,7 @@ jobs:
           # the write, gh and git denials below, because the shell
           # tool only ever sees the interpreter's own name. The CLI
           # may still auto-approve them as reads -- that gap is
-          # DESIGN.md 13.2 -- but this workflow will not widen it.
+          # DESIGN.md 12.2 -- but this workflow will not widen it.
           allow=''
           for cmd in cat jq grep head tail wc; do
             allow="$allow,shell($cmd),shell($cmd:*)"
@@ -534,7 +471,7 @@ jobs:
       # VM about to be destroyed. The step's own outcome still
       # records the failure for anyone reading the run.
       - name: 'Clear session scratch files'
-        if: always() && inputs.engine == 'copilot'
+        if: always()
         continue-on-error: true
         env:
           COPILOT_HOME: "${{ runner.temp }}/copilot"
@@ -559,41 +496,6 @@ jobs:
           rm -rf "$COPILOT_HOME"
           echo "Cleared $removed spilled tool-output file(s) and the" \
             "CLI home; artefacts/ is untouched."
-
-      - name: 'Preserve legacy session output'
-        if: always() && inputs.engine != 'copilot'
-        env:
-          EXECUTION_FILE: "${{ steps.agent.outputs.execution_file }}"
-          GEMINI_SUMMARY: "${{ steps.agent-gemini.outputs.summary }}"
-        run: |
-          python3 - <<'PY'
-          import json, os, pathlib
-          final = os.environ.get('GEMINI_SUMMARY', '')
-          source = os.environ.get('EXECUTION_FILE', '')
-          if source:
-              text = pathlib.Path(source).read_text(encoding='utf-8')
-              events = json.loads(text)
-              if not isinstance(events, list):
-                  raise SystemExit('Claude transcript is not a list')
-              for event in events:
-                  if not isinstance(event, dict):
-                      continue
-                  if isinstance(event.get('result'), str):
-                      final = event['result']
-                      continue
-                  message = event.get('message')
-                  if (event.get('type') == 'assistant'
-                          and isinstance(message, dict)):
-                      blocks = [b['text'] for b in message.get('content') or []
-                                if isinstance(b, dict)
-                                and b.get('type') == 'text'
-                                and isinstance(b.get('text'), str)]
-                      if blocks:
-                          final = ''.join(blocks)
-          if final:
-              summary = pathlib.Path('artefacts/session-summary.md')
-              summary.write_text(final, encoding='utf-8')
-          PY
 
       - name: 'Require proposal export'
         run: 'test -s artefacts/session-summary.md'

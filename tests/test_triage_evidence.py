@@ -22,7 +22,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 evidence = import_module("triage_evidence")
-github = import_module("triage_github")
+github = import_module("bot_github")
 
 
 class EvidenceTests(unittest.TestCase):
@@ -607,16 +607,19 @@ class EvidenceTests(unittest.TestCase):
         self.subprocess.assert_not_called()
 
     def test_packet_timeout_is_a_controlled_failure(self) -> None:
-        """A timed-out label read cannot publish a partial packet or trigger fanout."""
+        """A timed-out label read retries, then fails without a partial packet."""
         snapshot = self.root / "before.json"
         snapshot.write_bytes(self.before)
         output = self.root / "packet.json"
-        self.subprocess.side_effect = subprocess.TimeoutExpired(["gh"], 30)
-        message = self.assert_cli_fails(
-            "packet", "--snapshot", str(snapshot), "--output", str(output)
+        self.subprocess.side_effect = subprocess.TimeoutExpired(
+            ["gh"], github.TIMEOUT_SECONDS
         )
-        self.assertIn("timed out after 30 seconds", message)
-        self.subprocess.assert_called_once()
+        with patch.object(github.time, "sleep"):
+            message = self.assert_cli_fails(
+                "packet", "--snapshot", str(snapshot), "--output", str(output)
+            )
+        self.assertIn(f"timed out after {github.TIMEOUT_SECONDS} seconds", message)
+        self.assertEqual(self.subprocess.call_count, github.READ_ATTEMPTS)
         self.assertFalse(output.exists())
 
     def test_packet_fails_closed_on_api_errors(self) -> None:

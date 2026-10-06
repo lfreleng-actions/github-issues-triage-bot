@@ -11,21 +11,12 @@ and type, then validates and applies proposals on a separate runner.
 Snapshots and a diff report record observed label changes, not the
 agent's claims.
 
-## Engines
+## Harness
 
-Copilot is the active validation target for the three-job workflow.
-Claude and Gemini remain selectable, but their current paths still
-need verification.
-
-<!-- markdownlint-disable MD013 -->
-
-| Engine | `engine` input | Credential | Setup |
-| ------ | -------------- | ---------- | ----- |
-| Anthropic Claude | `claude` (the default) | `anthropic_api_key` | [ANTHROPIC.md](setup/ANTHROPIC.md) |
-| Google Gemini | `gemini` | `gemini_api_key` | [GOOGLE.md](setup/GOOGLE.md) |
-| GitHub Copilot | `copilot` | Fine-grained `copilot_token` PAT for model access | [GITHUB.md](setup/GITHUB.md) |
-
-<!-- markdownlint-enable MD013 -->
+The agent runs through the Copilot CLI on an untrusted runner with
+a fine-grained `copilot_token` PAT for model access and nothing
+else; [GITHUB.md](setup/GITHUB.md) covers the credential. The
+`model` input selects the model and defaults to `claude-opus-5.5`.
 
 ## How a run works
 
@@ -66,7 +57,7 @@ changes; inspect `apply-result.json` for those outcomes.
 
 - [Setup](setup/README.md) — App permissions, Copilot PAT and
   dry-run validation.
-- [Design §13.7](development/DESIGN.md) — trust boundaries, failure
+- [Design §12.7](development/DESIGN.md) — trust boundaries, failure
   handling and recovery.
 - [Repository README](https://github.com/lfreleng-actions/github-issues-triage#consuming-the-reusable-workflow)
   — caller examples and input reference.

@@ -6,7 +6,7 @@
 The agent proposes; this applies. Keeping the two apart means the
 repository credential a session holds is read-only, so the
 containment weaknesses of any particular harness stop mattering
-for writes (see DESIGN.md section 13.7).
+for writes (see DESIGN.md section 12.7).
 
 The rules live in ``triage_policy``; the GitHub calls in
 ``triage_github``. This module decides what to do with each

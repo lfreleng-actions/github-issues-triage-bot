@@ -19,8 +19,8 @@ session logs remain separate from the trusted report.
 The weekday schedule runs **live**, applying validated labels, Priority
 and Type. Manual dispatch and reusable-workflow defaults remain dry-run.
 
-**Copilot is the active validation target.** Claude and Gemini
-remain selectable but unverified in the three-job layout.
+The agent session runs through the **Copilot CLI**, with a
+fine-grained PAT for model access and no other credential.
 
 ## 📚 Documentation
 
@@ -67,7 +67,7 @@ prompt stay in the session artefact, not the trusted report bundle.
 Producer artefact IDs permit rerunning Apply without its producers
 while their artefacts remain available. A run/attempt/UUID namespace
 avoids collisions between reusable invocations and matrix calls;
-result names add the current attempt. See [Design §13.7](docs/development/DESIGN.md).
+result names add the current attempt. See [Design §12.7](docs/development/DESIGN.md).
 
 Live runs hold one workflow-level lock across the whole pipeline per
 caller repository and target owner. A lock keeps one pending run and a
@@ -100,7 +100,6 @@ jobs:
     uses: lfreleng-actions/github-issues-triage/.github/workflows/issues-triage.yaml@<commit-sha>  # vX.Y.Z
     with:
       org: 'your-org'
-      engine: 'copilot'
       dry_run: true
       github_app_client_id: ${{ vars.YOUR_APP_CLIENT_ID }}
     secrets:
@@ -114,9 +113,9 @@ The assets checkout defaults to the called workflow's commit.
 Prepare resolves any trusted `assets_ref` override once and pins
 both downstream checkouts to the resulting SHA.
 
-### Using the Copilot engine
+### Model credential
 
-Copilot requires a **personal fine-grained PAT** with the
+The Copilot CLI requires a **personal fine-grained PAT** with the
 **Copilot Requests** account permission and **no repository
 permissions**. Store it as `COPILOT_CLI_TOKEN`. Caller-native
 `GITHUB_TOKEN` authentication is no longer supported; do not pass
@@ -135,7 +134,6 @@ jobs:
     uses: lfreleng-actions/github-issues-triage/.github/workflows/issues-triage.yaml@<commit-sha>  # vX.Y.Z
     with:
       org: 'your-org'
-      engine: 'copilot'
       dry_run: true
     secrets:
       copilot_token: ${{ secrets.COPILOT_CLI_TOKEN }}
@@ -163,14 +161,12 @@ Propose never receives it.
 | Input | Default | Purpose |
 | ----- | ------- | ------- |
 | `org` | (required) | GitHub organisation or user to triage |
-| `engine` | `claude` | Agent engine: `claude`, `gemini`, or `copilot` |
-| `model` | engine default | `claude-opus-5` / `gemini-3.5-flash-lite` / `claude-sonnet-5` |
+| `model` | `claude-opus-5.5` | Copilot CLI model identifier (`^[a-z0-9.-]+$`) |
 | `dry_run` | `true` | Report intended labels; apply nothing |
 | `retriage` | `false` | Re-examine issues that carry labels |
 | `skip_agent` | `false` | Plumbing test: skip the agent session |
 | `repository` | `''` | Restrict the scan to one repository |
 | `exclude_repos` | `''` | Comma-separated repositories to skip |
-| `max_turns` | `80` | Claude turn ceiling; Copilot and current Gemini use the step timeout |
 | `egress_policy` | `audit` | harden-runner mode (`audit`/`block`) |
 | `egress_allow_config` | `''` | `harden-runner-block-action` config coordinate |
 | `github_app_client_id` | `''` | App auth; empty limits runs to dry-run |
@@ -179,9 +175,7 @@ Propose never receives it.
 
 | Secret | Required | Purpose |
 | ------ | -------- | ------- |
-| `anthropic_api_key` | claude runs, unless `skip_agent` | Anthropic API authentication |
-| `gemini_api_key` | gemini runs, unless `skip_agent` | Gemini API (AI Studio) authentication |
-| `copilot_token` | copilot sessions | Fine-grained PAT (`github_pat_`) for Copilot Requests; no repository permissions |
+| `copilot_token` | agent sessions | Fine-grained PAT (`github_pat_`) for Copilot Requests; no repository permissions |
 | `github_app_private_key` | no | Pairs with `github_app_client_id` |
 
 <!-- markdownlint-enable MD013 -->
@@ -226,7 +220,8 @@ Propose never receives it.
   100 entries per proposal. Larger batches fail before detail reads
   or writes rather than sampling. Narrow the repository or
   exclusions; this processing cap is separate from the search limit.
-  Helper commands have a 30-second timeout.
+  Helper commands have a 60-second timeout; reads retry a transient
+  failure twice, writes run once.
 - **No transaction or race guarantee:** writes can succeed in part,
   and humans or other callers can change issues after validation.
   Recovery needs inspection and targeted action, often
@@ -251,12 +246,10 @@ prek run --all-files
 
 The offline suite covers policy, GitHub adapters, evidence,
 snapshots, report rendering and workflow contracts; workflow tests
-use the PyYAML development dependency. The three-job Copilot
-dry-run, both secretless PR invocations and the first live run all
-passed; see
+use the PyYAML development dependency. The three-job dry-run, both
+secretless PR invocations and the first live run all passed; see
 [Design §11](docs/development/DESIGN.md#11-rollout-and-validation)
-for run evidence and remaining gaps. Claude and Gemini are outside
-active validation.
+for run evidence and remaining gaps.
 
 Build and preview the documentation site locally:
 

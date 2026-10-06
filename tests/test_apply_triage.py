@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 apply_triage = import_module("apply_triage")
 github = import_module("triage_github")
+plumbing = import_module("bot_github")
 policy = import_module("triage_policy")
 GitHubError = github.GitHubError
 LiveIssue = github.LiveIssue
@@ -53,7 +54,7 @@ class ApplyTriageTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         guard = patch(
-            "triage_github.subprocess.run",
+            "bot_github.subprocess.run",
             side_effect=AssertionError("unexpected gh call"),
         )
         guard.start()
@@ -150,7 +151,7 @@ class ApplyTriageTests(unittest.TestCase):
         with (
             patch("triage_policy.existing_priority", existing_priority),
             patch(
-                "triage_github.subprocess.run",
+                "bot_github.subprocess.run",
                 return_value=subprocess.CompletedProcess(
                     ["gh"], 0, json.dumps(pages), ""
                 ),
@@ -177,7 +178,7 @@ class ApplyTriageTests(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
-            timeout=30,
+            timeout=plumbing.TIMEOUT_SECONDS,
         )
         write.assert_not_called()
 
@@ -225,7 +226,7 @@ class ApplyTriageTests(unittest.TestCase):
                 patch.object(sys, "argv", argv),
                 patch.object(apply_triage, "build_context", return_value=self.ctx),
                 patch("triage_policy.existing_priority", existing_priority),
-                patch("triage_github.run_gh", return_value="not json"),
+                patch("bot_github.run_gh", return_value="not json"),
                 redirect_stdout(io.StringIO()),
                 self.assertRaises(SystemExit),
             ):
@@ -378,7 +379,7 @@ class ApplyCliTests(unittest.TestCase):
         environment.start()
         self.addCleanup(environment.stop)
         runner = patch.object(
-            github.subprocess, "run", side_effect=AssertionError("unexpected gh call")
+            plumbing.subprocess, "run", side_effect=AssertionError("unexpected gh call")
         )
         self.runner = runner.start()
         self.addCleanup(runner.stop)
@@ -514,19 +515,27 @@ class ApplyCliTests(unittest.TestCase):
             '[{"repository":{"nameWithOwner":"owner/repo"},"number":1}]',
             encoding="utf-8",
         )
+        timeout = subprocess.TimeoutExpired(["gh"], plumbing.TIMEOUT_SECONDS)
         self.runner.side_effect = [
             subprocess.CompletedProcess(["gh"], 0, "[[]]", ""),
             subprocess.CompletedProcess(["gh"], 0, "[[]]", ""),
-            subprocess.TimeoutExpired(["gh"], 30),
+            *[timeout] * plumbing.READ_ATTEMPTS,
         ]
-        with redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+        with (
+            patch.object(plumbing.time, "sleep"),
+            redirect_stdout(io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
             apply_triage.main()
         result = json.loads(self.output.read_text(encoding="utf-8"))
         self.assertEqual(
             result["counts"], {"proposed": 1, "applied": 0, "rejected": 0, "failed": 1}
         )
-        self.assertIn("timed out after 30 seconds", result["failed"][0]["reason"])
-        self.assertEqual(self.runner.call_count, 3)
+        self.assertIn(
+            f"timed out after {plumbing.TIMEOUT_SECONDS} seconds",
+            result["failed"][0]["reason"],
+        )
+        self.assertEqual(self.runner.call_count, 2 + plumbing.READ_ATTEMPTS)
         for call in self.runner.call_args_list:
             self.assertEqual(call.args[0][:2], ["gh", "api"])
             self.assertNotIn("--method", call.args[0])

@@ -5,7 +5,10 @@
 
 Kept apart from the policy in ``triage_policy`` so that the rules
 a proposal must satisfy stay readable without the API plumbing
-interleaved through them.
+interleaved through them. The plumbing itself, ``run_gh`` and the
+response decoders, is the shared ``bot_github`` module every bot
+carries; this module holds only what is specific to triage, and
+re-exports ``GitHubError`` so callers need one import.
 
 Nothing here decides whether an action is permitted; callers do
 that first. These helpers assume validation has already passed.
@@ -15,17 +18,33 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 from dataclasses import dataclass
 from typing import Any, cast
+
+from bot_github import ABSENT, GitHubError, api_list, decode_response, run_gh
+
+__all__ = [
+    "FIELD_ID_KEY",
+    "GitHubError",
+    "LiveIssue",
+    "Rejected",
+    "absent",
+    "add_fields",
+    "api_list",
+    "apply",
+    "decode_response",
+    "existing_priority",
+    "load_field_options",
+    "load_issue_types",
+    "read_issue",
+    "repo_labels",
+    "run_gh",
+]
 
 # Reserved key holding a field's own id alongside its option ids.
 # Option names come from the organisation's field definitions and
 # never take this shape, so no collision is possible.
 FIELD_ID_KEY = "__field_id__"
-# gh reports the status in its stderr line: "gh: Not Found (HTTP 404)".
-STATUS_RE = re.compile(r"\(HTTP (\d{3})\)")
-ABSENT = frozenset({404, 410})
 # A 403 can mean missing grants, rate limiting or an unknown failure.
 # Only known permission denials may degrade an explicitly allowed read.
 PERMISSION_DENIED_RE = re.compile(
@@ -36,75 +55,14 @@ RATE_LIMIT_RE = re.compile(r"rate[\s-]*limit|\babuse\b", re.IGNORECASE)
 
 
 class Rejected(Exception):
-    """A proposal failed validation and will not be applied."""
+    """A proposal failed validation and will not be applied.
 
-
-class GitHubError(Exception):
-    """A call to GitHub failed.
-
-    Distinct from ``Rejected`` because the two mean opposite
+    Distinct from ``GitHubError`` because the two mean opposite
     things: a rejection is the applier working correctly, while
-    this is the applier unable to do its job. Conflating them
-    would let a failed write be counted as a harmless rejection
-    and the step exit successfully.
-
-    Carries the HTTP status where gh reported one, so callers can
-    tell an endpoint that is absent from one that is briefly
-    unreachable.
+    a GitHub failure is the applier unable to do its job.
+    Conflating them would let a failed write be counted as a
+    harmless rejection and the step exit successfully.
     """
-
-    def __init__(self, message: str) -> None:
-        """Record the message and the status gh named, if any."""
-        super().__init__(message)
-        found = STATUS_RE.search(message)
-        self.status: int | None = int(found.group(1)) if found else None
-
-
-def run_gh(args: list[str], *, input: str | None = None) -> str:
-    """Run gh with a pinned REST API version, returning stdout or raising on failure."""
-    if args[:1] == ["api"]:
-        args = [*args, "--header", "X-GitHub-Api-Version: 2026-03-10"]
-    try:
-        proc = subprocess.run(
-            ["gh", *args],
-            input=input,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise GitHubError("gh timed out after 30 seconds") from exc
-    except OSError as exc:
-        raise GitHubError(f"could not run gh: {exc}") from exc
-    if proc.returncode != 0:
-        raise GitHubError(proc.stderr.strip() or f"gh {' '.join(args)} failed")
-    return proc.stdout
-
-
-def decode_response(raw: str) -> Any:
-    """Keep malformed API responses on the operational-failure path."""
-    try:
-        return json.loads(raw)
-    except (ValueError, RecursionError) as exc:
-        raise GitHubError(f"invalid JSON from GitHub: {exc}") from exc
-
-
-def api_list(endpoint: str) -> list[dict[str, Any]]:
-    """Read every page, refusing incomplete or non-list responses."""
-    raw = run_gh(["api", endpoint, "--paginate", "--slurp"])
-    pages = decode_response(raw)
-    if not isinstance(pages, list):
-        raise GitHubError(f"expected paginated arrays from {endpoint}")
-    entries: list[dict[str, Any]] = []
-    for page in cast("list[Any]", pages):
-        if not isinstance(page, list):
-            raise GitHubError(f"expected an array page from {endpoint}")
-        for entry in cast("list[Any]", page):
-            if not isinstance(entry, dict):
-                raise GitHubError(f"expected an object entry from {endpoint}")
-            entries.append(cast("dict[str, Any]", entry))
-    return entries
 
 
 def absent(exc: GitHubError) -> bool:

@@ -11,21 +11,9 @@ offline packet with issue bodies, existing labels, types and
 priorities. Propose classifies that packet; Apply verifies evidence
 and validates proposals before writing.
 
-Copilot is the active validation target. Claude and Gemini remain
-selectable but unverified in this layout:
-
-<!-- markdownlint-disable MD013 -->
-
-| Engine | `engine` input | Credential | Guide |
-| ------ | -------------- | ---------- | ----- |
-| Anthropic Claude | `claude` (default) | `anthropic_api_key` | [ANTHROPIC.md](ANTHROPIC.md) |
-| Google Gemini | `gemini` | `gemini_api_key` | [GOOGLE.md](GOOGLE.md) |
-| GitHub Copilot | `copilot` | Fine-grained `copilot_token` PAT for model access | [GITHUB.md](GITHUB.md) |
-
-<!-- markdownlint-enable MD013 -->
-
-Use the Copilot guide for current setup and validation. The legacy
-engine guides do not establish support for the new layout.
+Propose runs the Copilot CLI with a fine-grained `copilot_token`
+PAT for model access; [GITHUB.md](GITHUB.md) covers that
+credential. Prepare and Apply use the GitHub App below.
 
 ## Shared prerequisites
 
@@ -36,12 +24,12 @@ require dry-run. Configure the App for the intended repositories:
 
 <!-- markdownlint-disable MD013 -->
 
-| Setting | Value |
-| ------- | ----- |
+| Setting         | Value                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | App permissions | `issues: write` and `metadata: read` on repositories; `issue_fields: read` and `issue_types: read` on the organisation |
-| Installation | Target repositories; all repositories for an organisation-wide scan |
-| Client id | Passed as the `github_app_client_id` input |
-| Private key | Passed as the `github_app_private_key` secret |
+| Installation    | Target repositories; all repositories for an organisation-wide scan                                                    |
+| Client id       | Passed as the `github_app_client_id` input                                                                             |
+| Private key     | Passed as the `github_app_private_key` secret                                                                          |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -99,14 +87,13 @@ The workflow-contract tests use the PyYAML development dependency.
 The local suite, three-job Copilot dry-run and both secretless PR
 invocations passed; see
 [Design §11](../development/DESIGN.md#11-rollout-and-validation)
-for run evidence and limits. Claude and Gemini remain outside
-active validation.
+for run evidence and limits.
 
-For further validation, a maintainer can dispatch Copilot against
+For further validation, a maintainer can dispatch the agent against
 a reviewed, trusted ref:
 
 ```bash
-gh workflow run testing.yaml -f engine=copilot
+gh workflow run testing.yaml
 ```
 
 This check uses `dry_run: true` and `retriage: true`. It can examine
@@ -171,7 +158,7 @@ or guarantee that rerunning will complete a partial application.
 ## Further reading
 
 - [Design](../development/DESIGN.md) — the architecture, the
-  containment model, and the reasoning behind each engine's
+  containment model, and the reasoning behind the Copilot CLI
   integration
 - [Repository README](https://github.com/lfreleng-actions/github-issues-triage#consuming-the-reusable-workflow)
   — calling the reusable workflow from another repository

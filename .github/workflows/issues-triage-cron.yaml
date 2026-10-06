@@ -11,15 +11,14 @@
 # to pause the schedule if an operational problem needs attention
 # (docs/development/DESIGN.md section 11). Egress stays in audit mode.
 #
-# Scheduled runs take the copilot engine: the organisation already
+# The agent runs through the Copilot CLI: the organisation already
 # pays for Copilot, so triage spend draws on an existing
-# entitlement rather than a third vendor relationship. A manual
-# dispatch picks any of the three; per-engine credentials and
-# their setup live in docs/setup/.
+# entitlement rather than a separate vendor relationship. Credential
+# setup lives in docs/setup/.
 #
 # Trusted jobs prepare the offline packet and apply the proposal.
 # The agent job has no App action or installation-token input
-# (DESIGN.md section 13.7).
+# (DESIGN.md section 12.7).
 name: 'Issues Triage ⏰'
 
 # yamllint disable-line rule:truthy
@@ -29,18 +28,19 @@ on:
     - cron: '0 7 * * 1-5'
   workflow_dispatch:
     inputs:
-      engine:
-        description: 'Agent engine'
-        type: choice
-        options:
-          - copilot
-          - claude
-          - gemini
-        default: 'copilot'
       dry_run:
         description: 'Test run only, make no changes'
         type: boolean
         default: true
+      model:
+        description: 'Model'
+        type: choice
+        options:
+          - 'Claude Opus 5.5'
+          - 'Claude Fable 5.1'
+          - 'Claude Sonnet 5.5'
+          - 'GPT-6 Astra'
+        default: 'Claude Opus 5.5'
       retriage:
         description: 'Process all open issues, including labelled ones'
         type: boolean
@@ -64,8 +64,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  options:
+    name: 'Resolve options'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 2
+    permissions: {}
+    outputs:
+      model: "${{ steps.map.outputs.id }}"
+    steps:
+      - name: 'Harden runner'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: 'block'
+
+      # Display names in the dispatch form map to the identifiers the
+      # Copilot CLI accepts. Schedule events carry no inputs, so the
+      # fallback selects the default.
+      - name: 'Map display name to identifier'
+        id: map
+        env:
+          MODEL: "${{ inputs.model || 'Claude Opus 5.5' }}"
+        run: |
+          case "$MODEL" in
+            'Claude Opus 5.5') id='claude-opus-5.5' ;;
+            'Claude Fable 5.1') id='claude-fable-5.1' ;;
+            'Claude Sonnet 5.5') id='claude-sonnet-5.5' ;;
+            'GPT-6 Astra') id='gpt-6-astra' ;;
+            *) echo "::error::Unknown model $MODEL"; exit 1 ;;
+          esac
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
   triage:
     name: 'Triage'
+    needs: 'options'
     permissions:
       # Live labelling uses the App token, never this grant
       issues: read  # Snapshot reads when running without the App
@@ -76,11 +108,7 @@ jobs:
       # lfreleng-actions. Naming it this way rather than hard-coding
       # it keeps a fork's scheduled runs inside the fork.
       org: "${{ github.repository_owner }}"
-      # Scheduled runs hold the Copilot engine; a manual dispatch
-      # takes the operator's choice. The fallback covers schedule
-      # events, which carry no inputs, and API dispatches that
-      # omit this one.
-      engine: ${{ inputs.engine || 'copilot' }}
+      model: "${{ needs.options.outputs.model }}"
       # The schedule is live; manual dispatch retains its dry-run
       # default and can opt into writes by clearing that input.
       dry_run: >-
@@ -101,9 +129,5 @@ jobs:
       assets_repository: ${{ github.repository }}
       assets_ref: ${{ github.sha }}
     secrets:
-      # Each engine reads one of these; the reusable workflow fails
-      # fast when the selected engine's credential is absent.
-      anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
       copilot_token: ${{ secrets.COPILOT_CLI_TOKEN }}
       github_app_private_key: ${{ secrets.BOT_APP_PRIVATE_KEY }}

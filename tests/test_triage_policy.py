@@ -102,7 +102,7 @@ class PolicyTests(unittest.TestCase):
         self.priority = priority.start()
         self.addCleanup(priority.stop)
         guard = patch(
-            "triage_github.subprocess.run",
+            "bot_github.subprocess.run",
             side_effect=AssertionError("unexpected gh call"),
         )
         guard.start()

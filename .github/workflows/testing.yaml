@@ -21,15 +21,6 @@ name: 'Testing 🧪'
 on:
   pull_request:
   workflow_dispatch:
-    inputs:
-      engine:
-        description: 'Agent engine for the manual dry-run'
-        type: choice
-        options:
-          - claude
-          - gemini
-          - copilot
-        default: 'claude'
 
 permissions: {}
 
@@ -89,19 +80,12 @@ jobs:
       # Re-examine labelled issues so the agent session always runs
       # and the report always carries proposals to inspect.
       retriage: true
-      # Operator's choice of engine; empty guards against direct
-      # API dispatches that omit the input.
-      engine: "${{ inputs.engine || 'claude' }}"
-      # Bound the session cost on test runs.
-      max_turns: '40'
       egress_policy: 'block'
       # yamllint disable-line rule:line-length
       egress_allow_config: '@e0e35011ee145321a51d3226f044ec88dfe645b1'  # v0.16.4
       assets_repository: "${{ github.repository }}"
       assets_ref: "${{ github.sha }}"
     secrets:
-      anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
       # Personal fine-grained PAT with Copilot Requests and no
       # repository grants. Native caller tokens are not supported.
       copilot_token: ${{ secrets.COPILOT_CLI_TOKEN }}

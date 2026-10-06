@@ -33,5 +33,9 @@ a pull request, not the full set:
 
 ## Repository specifics
 
-None: working in this repository needs nothing beyond the organisation
-guidelines.
+Every bot carries five shared modules, copied verbatim from
+`lfreleng-actions/bots-template`: `bot_github.py`, `bot_evidence.py`,
+`artifact_fetch.py`, `preflight.py`, `ledger.py`. Fix them in the
+template first, then copy; never patch a copy alone. This bot does
+not yet call `artifact_fetch` or `ledger`; they ship so the copied
+set stays whole.

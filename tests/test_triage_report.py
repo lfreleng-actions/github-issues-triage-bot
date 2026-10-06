@@ -64,7 +64,6 @@ class LabelChangeTableTests(unittest.TestCase):
         return report.render_markdown(
             report.repo_rows(before, after),
             report.diff_snapshots(before, after),
-            {},
             dry_run=False,
         )
 
@@ -119,10 +118,10 @@ class LabelChangeTableTests(unittest.TestCase):
     def test_incomplete_and_unchanged_runs_render_no_table(self) -> None:
         """Absent after-state and a genuine no-op stay distinguishable."""
         rows = report.repo_rows(self.load("before.json", ("repo", 1, [])), None)
-        incomplete = report.render_markdown(rows, None, {}, dry_run=False)
+        incomplete = report.render_markdown(rows, None, dry_run=False)
         self.assertIn("after-snapshot is missing", incomplete)
         self.assertNotIn("New labels", incomplete)
-        unchanged = report.render_markdown(rows, [], {}, dry_run=True)
+        unchanged = report.render_markdown(rows, [], dry_run=True)
         self.assertIn("The snapshots show no label changes.", unchanged)
         self.assertNotIn("New labels", unchanged)
 

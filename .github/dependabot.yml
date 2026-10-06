@@ -30,7 +30,7 @@ updates:
       default-days: 7
     open-pull-requests-limit: 5
 
-  # Copilot CLI used by the copilot engine, installed with npm ci from
+  # Copilot CLI the agent job runs, installed with npm ci from
   # the committed lockfile so the whole tree is pinned by hash.
   - package-ecosystem: "npm"
     directory: "/tools/copilot-cli"
