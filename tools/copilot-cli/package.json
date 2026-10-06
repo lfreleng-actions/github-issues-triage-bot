@@ -1,9 +1,9 @@
 {
   "name": "copilot-cli-pin",
   "private": true,
-  "description": "Pins the Copilot CLI the issues-triage workflow installs with npm ci",
+  "description": "Pins the Copilot CLI a bot workflow installs with npm ci",
   "license": "Apache-2.0",
   "dependencies": {
-    "@github/copilot": "1.0.88"
+    "@github/copilot": "1.0.89"
   }
 }
