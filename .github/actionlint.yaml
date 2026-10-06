@@ -4,30 +4,6 @@
 
 # Path-specific configurations.
 paths:
-  .github/workflows/openssf-scorecard.yaml:
-    ignore:
-      # This fork of actionlint adds a cache-access policy check that
-      # upstream v1.7.12 does not have. It wants 'cache-mode: read' or
-      # 'cache-mode: none' on reusable workflow calls made under a
-      # low-trust trigger, here branch_protection_rule.
-      #
-      # GitHub shipped 'cache-mode' on 2026-09-10 and SchemaStore's
-      # workflow schema already models it, but check-jsonschema 0.38.0,
-      # the newest release, vendors an older copy, so adding the key
-      # fails the check-github-workflows hook at both job and workflow
-      # level. Suppress the lint rather than write a key that another
-      # mandatory hook rejects.
-      #
-      # Remove this entry once a check-jsonschema release vendors a
-      # schema containing 'cache-mode', then set 'cache-mode: read' on
-      # the job. The entry names its one callee, so any other reusable
-      # workflow call added to this file must account for cache access
-      # on its own merits. The pinned SHA is matched as [0-9a-f]{40}
-      # rather than written out: Dependabot rotates it, and naming it
-      # here would fail the lint on every bump.
-      # yamllint disable-line rule:line-length
-      - 'reusable workflow call "lfit/releng-reusable-workflows/\.github/workflows/reuse-openssf-scorecard\.yaml@[0-9a-f]{40}" has no explicit cache access limit'
-
   .github/workflows/issues-triage.yaml:
     ignore:
       # actionlint does not yet know 'github.job_workflow_sha' or

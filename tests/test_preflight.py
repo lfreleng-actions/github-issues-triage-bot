@@ -177,6 +177,38 @@ class IdentityAndTokenTest(unittest.TestCase):
         ):
             preflight.check_token_read_only("org/repo")
 
+    def test_probe_targets_a_repository_in_the_token_scope(self) -> None:
+        """Without a named repository the installation listing picks the probe."""
+        replies: dict[str, dict[str, Any]] = {
+            "installation/repositories?per_page=1": {
+                "repositories": [{"full_name": "org/in-scope"}]
+            },
+            "repos/org/in-scope": {"permissions": {"pull": True, "push": False}},
+        }
+        seen: list[str] = []
+
+        def fake(endpoint: str) -> dict[str, Any]:
+            seen.append(endpoint)
+            return replies[endpoint]
+
+        with (
+            patch.object(github, "api_object", side_effect=fake),
+            redirect_stdout(io.StringIO()),
+        ):
+            preflight.check_token_read_only()
+        self.assertEqual(seen, list(replies))
+        listings: list[dict[str, Any]] = [
+            {"repositories": []},
+            {},
+            {"repositories": ["x"]},
+        ]
+        for listing in listings:
+            with (
+                patch.object(github, "api_object", return_value=listing),
+                self.assertRaises(preflight.Drift),
+            ):
+                preflight.check_token_read_only()
+
 
 class WorkflowAuditTest(unittest.TestCase):
     """The checked-in workflows pass their own contracts and zizmor."""

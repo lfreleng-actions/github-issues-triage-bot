@@ -21,7 +21,7 @@ Four commands:
 ``config``     checks ``config/bot.json`` and the credential shapes
 ``identity``   checks the App that minted a token is the configured one
 ``token``      checks a minted token cannot push to or administer a
-               repository
+               repository the token is scoped to
 
 Each prints what it checked, one line per check, and nothing else:
 no value a check read is ever echoed.
@@ -198,20 +198,39 @@ def check_identity(expected_slug: str, minted_slug: str) -> None:
     say(f"token minted by {minted_slug}")
 
 
-def check_token_read_only(repository: str) -> None:
+def scoped_repository() -> str:
+    """One repository the minted token can see, asked of the installation.
+
+    A mint scoped to named repositories, or to a target organisation
+    other than the caller's, cannot read the caller repository; the
+    installation listing is in scope by construction, whatever the
+    mint asked for.
+    """
+    data = github.api_object("installation/repositories?per_page=1")
+    entries = data.get("repositories")
+    if not isinstance(entries, list) or not entries:
+        raise Drift("token: the installation grants access to no repository")
+    first = cast("list[Any]", entries)[0]
+    if not isinstance(first, dict):
+        raise Drift("token: installation listing carried no repository object")
+    return github.require_str(cast("dict[str, Any]", first), "full_name", "token")
+
+
+def check_token_read_only(repository: str | None = None) -> None:
     """A read token must not be able to push to or administer a repository.
 
-    Uses GH_TOKEN from the environment; the probe reads one
-    repository and inspects the permissions the token holds on it.
+    Uses GH_TOKEN from the environment; the probe reads one repository
+    the token is scoped to and inspects the permissions it holds there.
     """
-    data = github.api_object(f"repos/{repository}")
+    target = repository or scoped_repository()
+    data = github.api_object(f"repos/{target}")
     perms = data.get("permissions")
     if not isinstance(perms, dict):
         raise Drift("token: repository reply carried no permissions")
     grants = cast("dict[str, Any]", perms)
     if grants.get("push") or grants.get("admin") or grants.get("maintain"):
         raise Drift("token: read token can push, maintain or administer")
-    say(f"token is read-only on {repository}")
+    say(f"token is read-only on {target}")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -235,7 +254,7 @@ def main(argv: list[str] | None = None) -> None:
     identity.add_argument("--minted-slug", required=True)
 
     token = commands.add_parser("token", help="minted token is read-only")
-    token.add_argument("--repository", required=True)
+    token.add_argument("--repository", default=None)
 
     args = parser.parse_args(argv)
     try:
