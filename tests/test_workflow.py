@@ -557,6 +557,85 @@ class WorkflowContractTests(WorkflowCase):
         self.assert_before("apply", "after", "Build report")
 
 
+class PreflightContracts(WorkflowCase):
+    """The run-time gate runs from pinned assets before any token exists."""
+
+    def test_gate_runs_after_pinning_and_before_the_read_mint(self) -> None:
+        """Contract tests, zizmor and the config check precede the mint."""
+        self.assert_before(
+            "prepare", "Pin assets commit", "Pre-flight: workflow contracts and audit"
+        )
+        self.assert_before(
+            "prepare",
+            "Pre-flight: workflow contracts and audit",
+            "Pre-flight: configuration and credentials",
+        )
+        self.assert_before(
+            "prepare",
+            "Pre-flight: configuration and credentials",
+            "Mint read-only App token",
+        )
+        run = self.step("prepare", "Pre-flight: workflow contracts and audit")["run"]
+        self.assertIn("scripts/preflight.py workflow --root .", run)
+        self.assertIn("cd triage-assets", run)
+
+    def test_config_gate_sees_the_credentials_under_template_names(self) -> None:
+        """Shape checks read the inputs the workflow was handed, nothing else."""
+        step = self.step("prepare", "Pre-flight: configuration and credentials")
+        self.assertEqual(
+            step["env"]["BOT_APP_CLIENT_ID"], "${{ inputs.github_app_client_id }}"
+        )
+        self.assertEqual(
+            step["env"]["BOT_APP_PRIVATE_KEY"], "${{ secrets.github_app_private_key }}"
+        )
+        self.assertIn("--config triage-assets/config/bot.json", step["run"])
+
+    def test_minted_tokens_are_checked_for_identity(self) -> None:
+        """Both mints hand their app-slug to the identity check before use."""
+        read = self.step("prepare", "Pre-flight: App identity and token grants")
+        self.assertEqual(
+            read["env"]["MINTED_SLUG"], "${{ steps.app-token.outputs.app-slug }}"
+        )
+        self.assertEqual(
+            read["env"]["GH_TOKEN"], "${{ steps.app-token.outputs.token }}"
+        )
+        self.assertIn("preflight.py token", read["run"])
+        self.assert_before(
+            "prepare",
+            "Pre-flight: App identity and token grants",
+            "Snapshot issues before the session",
+        )
+        write = self.step("apply", "Pre-flight: apply token identity")
+        self.assertEqual(
+            write["env"]["MINTED_SLUG"], "${{ steps.app-token.outputs.app-slug }}"
+        )
+        self.assert_before(
+            "apply", "Pre-flight: apply token identity", "Apply triage proposal"
+        )
+
+    def test_zizmor_is_pinned(self) -> None:
+        """The auditor the gate runs is an exact version."""
+        self.assertRegex(
+            self.step("prepare", "Install zizmor")["run"], r"zizmor==\d+\.\d+\.\d+"
+        )
+
+    def test_every_mint_owner_is_the_trusted_org_input(self) -> None:
+        """owner is literally inputs.org on every create-github-app-token step."""
+        mints = [
+            (job, step)
+            for job in self.jobs
+            if "steps" in self.jobs[job]
+            for step in self.actions(job, "actions/create-github-app-token")
+        ]
+        self.assertEqual({job for job, _ in mints}, {"prepare", "apply"})
+        for job, step in mints:
+            with self.subTest(job=job):
+                self.assertEqual(step["with"]["owner"], "${{ inputs.org }}")
+                self.assertEqual(
+                    step["with"]["repositories"], "${{ inputs.repository }}"
+                )
+
+
 class SelfRepositoryCallTests(unittest.TestCase):
     """Check the local callee contract while actionlint lacks $/ support."""
 

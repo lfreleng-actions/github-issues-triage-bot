@@ -172,19 +172,6 @@ jobs:
           echo '::error::Live runs require organisation App credentials'
           exit 1
 
-      - name: 'Mint read-only App token'
-        id: app-token
-        if: inputs.github_app_client_id != ''
-        # yamllint disable-line rule:line-length
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: "${{ inputs.github_app_client_id }}"
-          private-key: "${{ secrets.github_app_private_key }}"
-          owner: "${{ inputs.org }}"
-          repositories: "${{ inputs.repository }}"
-          permission-issues: 'read'
-          permission-metadata: 'read'
-
       - name: 'Resolve assets ref'
         id: assets
         env:
@@ -214,6 +201,73 @@ jobs:
           sha="$(git -C triage-assets rev-parse HEAD)"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # Pre-flight gate (docs/development/DESIGN.md section 13.8). The
+      # contract tests and zizmor run again here, from the pinned
+      # assets, so a drift merged into the workflow fails this run
+      # before any token exists. The config check reads the credential
+      # shapes from the environment and prints nothing it read.
+      - name: 'Set up uv'
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+
+      - name: 'Install zizmor'
+        run: uv tool install 'zizmor==1.30.1'
+
+      - name: 'Pre-flight: workflow contracts and audit'
+        run: |
+          cd triage-assets
+          uv run --locked python -B scripts/preflight.py workflow --root .
+
+      - name: 'Pre-flight: configuration and credentials'
+        env:
+          BOT_APP_CLIENT_ID: "${{ inputs.github_app_client_id }}"
+          BOT_APP_PRIVATE_KEY: "${{ secrets.github_app_private_key }}"
+          COPILOT_GITHUB_TOKEN: "${{ secrets.copilot_token }}"
+          EGRESS_POLICY: "${{ inputs.egress_policy }}"
+          EGRESS_ALLOW_CONFIG: "${{ inputs.egress_allow_config }}"
+          DRY_RUN: "${{ inputs.dry_run }}"
+          # yamllint disable-line rule:line-length
+          JOB_WORKFLOW_SHA: "${{ job.workflow_sha || github.job_workflow_sha }}"
+          ASSETS_SHA: "${{ steps.pinned.outputs.sha }}"
+        run: |
+          extra=()
+          if [ "$DRY_RUN" = true ]; then extra+=(--dry-run); fi
+          python3 triage-assets/scripts/preflight.py config \
+            --config triage-assets/config/bot.json \
+            --egress-policy "$EGRESS_POLICY" \
+            --egress-allow-config "$EGRESS_ALLOW_CONFIG" \
+            --workflow-sha "$JOB_WORKFLOW_SHA" \
+            --assets-sha "$ASSETS_SHA" "${extra[@]}"
+
+      - name: 'Mint read-only App token'
+        id: app-token
+        if: inputs.github_app_client_id != ''
+        # yamllint disable-line rule:line-length
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: "${{ inputs.github_app_client_id }}"
+          private-key: "${{ secrets.github_app_private_key }}"
+          owner: "${{ inputs.org }}"
+          repositories: "${{ inputs.repository }}"
+          permission-issues: 'read'
+          permission-metadata: 'read'
+
+      # The slug the mint returns is the one signal that says whose key
+      # was wired in; a probe with the token proves it cannot write.
+      - name: 'Pre-flight: App identity and token grants'
+        if: inputs.github_app_client_id != ''
+        env:
+          GH_TOKEN: "${{ steps.app-token.outputs.token }}"
+          MINTED_SLUG: "${{ steps.app-token.outputs.app-slug }}"
+          REPOSITORY: "${{ github.repository }}"
+        run: |
+          python3 triage-assets/scripts/preflight.py identity \
+            --config triage-assets/config/bot.json --minted-slug "$MINTED_SLUG"
+          python3 triage-assets/scripts/preflight.py token \
+            --repository "$REPOSITORY"
 
       - name: 'Snapshot issues before the session'
         id: before
@@ -682,6 +736,16 @@ jobs:
           # yamllint disable-line rule:line-length
           permission-issues: "${{ !inputs.dry_run && needs.propose.result == 'success' && steps.proposal.outcome == 'success' && 'write' || 'read' }}"
           permission-metadata: 'read'
+
+      # The token that may write: confirm it came from the configured
+      # App before it is used.
+      - name: 'Pre-flight: apply token identity'
+        if: steps.app-token.outcome == 'success'
+        env:
+          MINTED_SLUG: "${{ steps.app-token.outputs.app-slug }}"
+        run: |
+          python3 triage-assets/scripts/preflight.py identity \
+            --config triage-assets/config/bot.json --minted-slug "$MINTED_SLUG"
 
       - name: 'Apply triage proposal'
         id: apply

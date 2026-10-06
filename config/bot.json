@@ -1,0 +1,4 @@
+{
+  "app_slug": "lf-releng-issues-triage-bot",
+  "description": "GitHub App whose installation token this pipeline mints. The prepare job refuses a token minted by any other App."
+}

@@ -635,3 +635,29 @@ edits.
 Fresh reads reduce stale decisions without eliminating the race
 between validation and writes. Cancellation also cannot undo a
 request that already succeeded.
+
+### 13.8 The pre-flight gate
+
+The contract tests in `tests/test_workflow.py` run when a pull
+request changes the workflow. A scheduled run executes whatever is on
+the default branch, and nothing in that path re-checks the boundary
+before the first App token mint. `scripts/preflight.py` closes that:
+it runs from the pinned assets checkout in Prepare, before any
+`create-github-app-token` step, and fails the run closed on drift.
+
+Before the read mint it re-runs the workflow contract tests and
+`zizmor --persona auditor` against the checked-out workflow files,
+checks `config/bot.json` names one lower-case App slug, checks each
+credential has the shape of the thing it claims to be without
+printing it, requires a commit-pinned and loaded allow-list in block
+mode, and refuses a live run whose `assets_sha` differs from
+`job.workflow_sha`. After the mint it compares the `app-slug` the
+action returned with the configured slug, so another App's key wired
+into this workflow fails rather than acts, and probes the token
+against this repository to prove it holds no `push`, `maintain` or
+`admin`. Apply repeats the identity check on its own token before the
+one step that writes.
+
+The same module, tests and step shape run in every bot repository of
+the organisation; this repository's copy differs in the module it
+imports for `gh` and the job names alone.
