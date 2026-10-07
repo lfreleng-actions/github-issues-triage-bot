@@ -205,6 +205,8 @@ class SnapshotTests(unittest.TestCase):
                 "owner",
                 "--state",
                 "open",
+                "--visibility",
+                "public",
                 "--limit",
                 "1000",
                 "--json",
@@ -213,6 +215,20 @@ class SnapshotTests(unittest.TestCase):
                 "owner/single-repo",
             ],
         )
+
+    def test_search_asks_for_public_repositories_alone(self) -> None:
+        """Visibility is a server-side search filter evaluated at fetch time.
+
+        The packet reaches a runner that audits egress rather than
+        blocking it, so the snapshot fetches text the organisation
+        already publishes and nothing else; filtering in the query
+        leaves no window between a listing and the fetch.
+        """
+        result = self.run_snapshot("[]")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        arguments = self.arguments.read_text(encoding="utf-8").splitlines()
+        self.assertIn("--visibility", arguments)
+        self.assertEqual(arguments[arguments.index("--visibility") + 1], "public")
 
     def test_hostile_issue_text_is_preserved_without_logging(self) -> None:
         """Runner-command-shaped issue text stays in the JSON, not the Actions log."""

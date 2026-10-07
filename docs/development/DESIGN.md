@@ -112,9 +112,9 @@ Triage Bot**, whose slug `config/bot.json` records and the pre-flight
 gate checks.
 
 Without an App, trusted jobs use their job-native token for dry-run
-reads within its access. That token does not grant organisation-wide
-private access. Propose's job-native `GITHUB_TOKEN` has
-`contents: read` and no other permissions. It has no App key,
+reads within its access. Whichever token reads, the snapshot fetches
+issues from public repositories alone (§7.1). Propose's job-native
+`GITHUB_TOKEN` has `contents: read` and no other permissions. It has no App key,
 installation token or App-token post action.
 
 ### 5.2 Model credentials are separate
@@ -206,17 +206,55 @@ dispatch its run ID, so one agent dry run never cancels another.
 
 ### 7.1 Egress
 
-Each job uses harden-runner with `egress_policy: audit` by default.
-Block mode first loads the configured organisation allow-list.
-Audit records outbound calls without blocking them. The offline
-packet removes GitHub issue reads from the session's duties; it
-does not disconnect the runner from the model or artefact services.
-Collect current endpoints before enabling block mode.
+The trusted jobs, Prepare and Apply, run harden-runner in the mode
+`egress_policy` names, `block` by default in the bundled callers,
+and load the organisation allow-list first from the coordinate in
+`egress_allow_config`. Propose always audits, because the Copilot
+model backend (`api.githubcopilot.com` and its enterprise endpoint)
+is outside the organisation allow-list and a session in block mode
+cannot start. Audit records outbound calls without blocking them.
 
-The loader's pre hook runs in all three jobs, including audit mode.
-`allow_list_summary` is true in Prepare and false in Propose and Apply,
-making the shared allow-list summary appear once. This changes reporting,
-not allow-list loading or the hardening applied to each runner.
+Audit mode on Propose is an accepted exposure, recorded here so
+operators weigh it with the full picture. §12.2 lists what sits on
+that runner: the offline issue packet, the model PAT, the job-native
+`GITHUB_TOKEN` and the Actions runtime token. A prompt-injected
+session could send any of them to a host of its choosing, and no
+claim below reduces that possibility to zero.
+
+What the design does about each:
+
+- **The packet.** The snapshot fetches issues from public
+  repositories alone (`--visibility public`, evaluated by GitHub at
+  fetch time), and the packet step reads the bodies of those issues
+  and nothing else. A repository turned private between the two
+  reads, or an edit landing between them, can still place text in
+  the packet that is private by the time the session runs; the
+  window is seconds wide and the filter removes the common case,
+  which is a scan over an estate that holds private repositories.
+  Treat packet contents as disclosed once the session starts.
+- **The model PAT.** The caller provisions it with Copilot Requests
+  and no repository grants; the workflow checks its prefix and
+  cannot check its grants (§12.3). What the caller gave it bounds
+  its exposure.
+- **The job-native token.** `contents: read` on this repository,
+  expiring with the job.
+- **The runtime token.** Reaches this run's artifacts and can
+  replace one by name (§12.7), which is why every trusted job
+  fetches evidence by ID and digest and never by name.
+
+Nothing on the Propose runner can write to a repository, and §12.7
+keeps every write behind evidence the trusted jobs verify. The
+residual risks are model spend, disclosure of packet text and
+artifact interference, which the trusted jobs refuse by design.
+
+Block mode for Propose needs the model backend in the allow-list,
+which the organisation has not added; adding it would shrink the
+exposure to the backend itself and is the first item in §10.
+
+The loader's pre hook runs in the two trusted jobs, with
+`allow_list_summary` true in Prepare alone, so the shared allow-list
+summary appears once. Propose loads no allow-list because it
+enforces none.
 
 ### 7.2 Reporting and Run Artefacts
 
@@ -268,8 +306,9 @@ not feed the trusted report.
 Session and result uploads use `always()`, but cancellation,
 runner loss or upload failure can prevent preservation. Do not
 promise a complete session log or evidence on every failure. Review
-artefact access and model data handling: packets may include private
-issue content, and logs can contain sensitive data despite redaction.
+artefact access and model data handling: the packet draws on
+public repositories but travels to an audit-mode runner (§7.1), and
+logs can contain sensitive data despite redaction.
 
 ### 7.3 Modular consumption
 
@@ -341,6 +380,10 @@ exposes its model credential to the chosen code.
 
 ## 10. Open Questions
 
+- Add the Copilot model backend to the organisation egress
+  allow-list, so Propose can run in block mode and the exposure §7.1
+  accepts narrows to the backend itself. That is an organisation
+  change, outside this repository.
 - Narrow the Apply job's write token to the repositories a validated
   proposal targets. Scoping requires naming repositories, and an
   org-wide scan names none, so the installation token reaches

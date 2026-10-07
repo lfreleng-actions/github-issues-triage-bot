@@ -42,7 +42,10 @@ on:
         default: ''
 
       egress_policy:
-        description: 'harden-runner egress mode: audit or block'
+        description: >-
+          harden-runner egress for the trusted Prepare and Apply jobs:
+          audit or block. Propose always audits; the model backend is
+          outside the organisation allow-list.
         type: string
         default: 'audit'
       egress_allow_config:
@@ -320,20 +323,19 @@ jobs:
       # This identifies untrusted data, never code or provenance.
       session_id: "${{ steps.session.outputs.artifact-id }}"
     steps:
-      - name: 'Load egress allow-list'
-        if: inputs.egress_policy == 'block'
-        # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/harden-runner-block-action@a32eb064a1188f6b0f15d2c0c0381efe54b0dd22 # v0.12.2
-        with:
-          config: "${{ inputs.egress_allow_config }}"
-          allow_list_summary: 'false'
-
-      - name: 'Harden runner'
+      # Always audit: the model backend (api.githubcopilot.com and its
+      # enterprise endpoint) is outside the organisation allow-list,
+      # so block mode cannot run a session (run 37522458757). Audit is
+      # an accepted exposure: the packet, the model PAT, the job token
+      # and the runtime token sit on a runner that can reach any host.
+      # DESIGN.md section 7.1 states what the design does about each;
+      # none of it is a sandbox, and no credential here can write to a
+      # repository.
+      - name: 'Harden runner (audit)'
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
-          egress-policy: "${{ inputs.egress_policy }}"
-          allowed-endpoints: "${{ env.CONNECTION_ALLOW_LIST }}"
+          egress-policy: 'audit'
 
       - name: 'Require pinned assets'
         env:
