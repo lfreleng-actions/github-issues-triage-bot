@@ -163,5 +163,5 @@ or guarantee that rerunning will complete a partial application.
 - [Design](../development/DESIGN.md) — the architecture, the
   containment model, and the reasoning behind the Copilot CLI
   integration
-- [Repository README](https://github.com/lfreleng-actions/github-issues-triage#consuming-the-reusable-workflow)
+- [Repository README](https://github.com/lfreleng-actions/github-issues-triage-bot#consuming-the-reusable-workflow)
   — calling the reusable workflow from another repository

@@ -6,9 +6,9 @@ SPDX-FileCopyrightText: 2026 The Linux Foundation
 # Design: Scheduled AI Triage of GitHub Issues
 
 **Status:** Three-job pipeline live; first production write run passed
-**Repository:** `lfreleng-actions/github-issues-triage`
+**Repository:** `lfreleng-actions/github-issues-triage-bot`
 **Author:** Matthew Watkins (AI-drafted, human-reviewed)
-**Last updated:** 2026-09-18
+**Last updated:** 2026-10-07
 
 This document describes the current workflow and helper scripts.
 §12.7 defines the prepare/propose/apply trust boundary.
@@ -397,6 +397,17 @@ exposes its model credential to the chosen code.
 
 ## 11. Rollout and Validation
 
+The organisation recreated this repository on 2026-10-06 under its
+current name. Run numbers below that predate the recreation belonged
+to the repository it replaced; their logs went with it, so this
+section cites them by number. The fork's run survives under the
+renamed fork. The first dry run on the recreated repository with
+the App credentials, [run 37653920353][recreated-validation], passed
+every pre-flight check and validated 59 of 61 proposals; the trusted
+job refused the other two for proposing both `bug` and `feature`.
+
+[recreated-validation]: https://github.com/lfreleng-actions/github-issues-triage-bot/actions/runs/37653920353
+
 The local test suite covers policy, GitHub adapters, snapshot
 failures, evidence integrity and workflow contracts, including
 execution of embedded shell snippets with fakes. Workflow tests use
@@ -410,7 +421,7 @@ prek run --all-files
 The [fork Copilot run][fork-validation] at the first consolidated
 head, `a57aa2f`, completed with status `success`: Prepare, Propose,
 Apply and all regression jobs passed with `dry_run: true`,
-`retriage: true` and no App credentials. The [PR testing run][pr-validation]
+`retriage: true` and no App credentials. The PR testing run (35216002363)
 also completed with status `success` for both the first and second secretless
 invocations: Prepare and Apply succeeded, and Propose skipped in each.
 Those invocations verified the absence of artefact-name collisions
@@ -419,15 +430,14 @@ no rejections or failures, and identical before/after snapshots.
 Rerunning Apply reused the producer artefact IDs and published
 a distinct attempt-2 report without repeating the model session.
 
-[fork-validation]: https://github.com/modeseven-lfreleng-actions/github-issues-triage/actions/runs/35216029661
-[pr-validation]: https://github.com/lfreleng-actions/github-issues-triage/actions/runs/35216002363
+[fork-validation]: https://github.com/modeseven-lfreleng-actions/github-issues-triage-bot/actions/runs/35216029661
 
-The [production dry-run][production-validation] also minted the
+The production dry-run (35318520607) also minted the
 App's read-scoped token and validated 19 proposals with no rejected,
 failed or dropped fields. Its snapshots were identical: it performed
 no issue writes.
 
-The [first live run][live-validation] then exercised the write path
+The first live run (35324225186) then exercised the write path
 end to end. Its Apply job minted `issues: write` alongside the
 organisation `issue_fields` and `issue_types` reads, and applied all
 19 proposals with none rejected, failed, dropped or escalated. The
@@ -441,15 +451,12 @@ writes, and issue-field and type writes. It does not exercise partial
 write recovery, rate-limit behaviour or a batch near the 100-issue
 cap.
 
-[production-validation]: https://github.com/lfreleng-actions/github-issues-triage/actions/runs/35318520607
-[live-validation]: https://github.com/lfreleng-actions/github-issues-triage/actions/runs/35324225186
-
 Scheduled runs now apply triage changes. To pause production if a run
 reveals an operational problem, disable the scheduled caller:
 
 ```bash
 gh workflow disable issues-triage-cron.yaml \
-  --repo lfreleng-actions/github-issues-triage
+  --repo lfreleng-actions/github-issues-triage-bot
 ```
 
 Disabling future runs does not cancel an in-progress run or undo its

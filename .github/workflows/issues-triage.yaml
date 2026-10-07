@@ -59,7 +59,7 @@ on:
       assets_repository:
         description: 'Trusted repository providing the prompt and scripts'
         type: string
-        default: 'lfreleng-actions/github-issues-triage'
+        default: 'lfreleng-actions/github-issues-triage-bot'
       assets_ref:
         description: >-
           Trusted assets ref; resolved once to a commit. Empty locks

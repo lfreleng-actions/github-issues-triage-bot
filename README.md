@@ -7,7 +7,7 @@ SPDX-FileCopyrightText: 2026 The Linux Foundation
 
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable-next-line MD013 -->
-[![Linux Foundation](https://img.shields.io/badge/Linux-Foundation-blue)](https://linuxfoundation.org/) [![Source Code](https://img.shields.io/badge/GitHub-100000?logo=github&logoColor=white&color=blue)](https://github.com/lfreleng-actions/github-issues-triage) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lfreleng-actions/github-issues-triage/badge)](https://scorecard.dev/viewer/?uri=github.com/lfreleng-actions/github-issues-triage)
+[![Linux Foundation](https://img.shields.io/badge/Linux-Foundation-blue)](https://linuxfoundation.org/) [![Source Code](https://img.shields.io/badge/GitHub-100000?logo=github&logoColor=white&color=blue)](https://github.com/lfreleng-actions/github-issues-triage-bot) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lfreleng-actions/github-issues-triage-bot/badge)](https://scorecard.dev/viewer/?uri=github.com/lfreleng-actions/github-issues-triage-bot)
 <!-- prettier-ignore-end -->
 
 Scheduled AI triage of GitHub issues. A reusable workflow prepares
@@ -24,7 +24,7 @@ fine-grained PAT for model access and no other credential.
 
 ## 📚 Documentation
 
-<https://lfreleng-actions.github.io/github-issues-triage/>
+<https://lfreleng-actions.github.io/github-issues-triage-bot/>
 
 Credential setup and validation steps live in
 [`docs/setup/`](docs/setup/README.md). The
@@ -97,7 +97,7 @@ jobs:
     # as a comment. Never reference a mutable branch here: the
     # trusted jobs receive your App private key.
     # yamllint disable-line rule:line-length
-    uses: lfreleng-actions/github-issues-triage/.github/workflows/issues-triage.yaml@<commit-sha>  # vX.Y.Z
+    uses: lfreleng-actions/github-issues-triage-bot/.github/workflows/issues-triage.yaml@<commit-sha>  # vX.Y.Z
     with:
       org: 'your-org'
       dry_run: true
@@ -131,7 +131,7 @@ jobs:
       contents: read
 
     # yamllint disable-line rule:line-length
-    uses: lfreleng-actions/github-issues-triage/.github/workflows/issues-triage.yaml@<commit-sha>  # vX.Y.Z
+    uses: lfreleng-actions/github-issues-triage-bot/.github/workflows/issues-triage.yaml@<commit-sha>  # vX.Y.Z
     with:
       org: 'your-org'
       dry_run: true

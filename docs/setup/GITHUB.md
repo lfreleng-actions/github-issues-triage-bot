@@ -71,7 +71,7 @@ jobs:
       contents: read
     # Replace with a reviewed release commit SHA, not a tag object.
     # yamllint disable-line rule:line-length
-    uses: lfreleng-actions/github-issues-triage/.github/workflows/issues-triage.yaml@<commit-sha>  # vX.Y.Z
+    uses: lfreleng-actions/github-issues-triage-bot/.github/workflows/issues-triage.yaml@<commit-sha>  # vX.Y.Z
     with:
       org: 'your-org'
       dry_run: true

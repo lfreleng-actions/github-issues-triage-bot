@@ -13,9 +13,9 @@ site_name: 'GitHub Issues Triage'
 site_description: >-
   Scheduled AI triage of GitHub issues: a reusable workflow that
   labels an organisation's open issues and attaches full run evidence.
-site_url: 'https://lfreleng-actions.github.io/github-issues-triage/'
-repo_url: 'https://github.com/lfreleng-actions/github-issues-triage'
-repo_name: 'lfreleng-actions/github-issues-triage'
+site_url: 'https://lfreleng-actions.github.io/github-issues-triage-bot/'
+repo_url: 'https://github.com/lfreleng-actions/github-issues-triage-bot'
+repo_name: 'lfreleng-actions/github-issues-triage-bot'
 edit_uri: 'edit/main/docs/'
 copyright: 'Copyright © 2026 The Linux Foundation'
 
