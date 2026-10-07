@@ -391,6 +391,21 @@ class WorkflowContractTests(WorkflowCase):
             reusable["on"]["workflow_call"]["inputs"]["dry_run"]["default"], "true"
         )
 
+    def test_assets_default_names_this_repository(self) -> None:
+        """An external caller relying on the default checks out these assets.
+
+        The repository was renamed and recreated; a stale default named
+        a repository that no longer exists, so a caller omitting
+        assets_repository failed to check out the prompt and scripts.
+        """
+        reusable: dict[str, Any] = yaml.load(
+            WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader
+        )
+        self.assertEqual(
+            reusable["on"]["workflow_call"]["inputs"]["assets_repository"]["default"],
+            "lfreleng-actions/github-issues-triage-bot",
+        )
+
     def test_model_defaults_to_an_identifier_and_the_cron_maps_display_names(
         self,
     ) -> None:

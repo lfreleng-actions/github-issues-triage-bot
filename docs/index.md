@@ -59,7 +59,7 @@ changes; inspect `apply-result.json` for those outcomes.
   dry-run validation.
 - [Design §12.7](development/DESIGN.md) — trust boundaries, failure
   handling and recovery.
-- [Repository README](https://github.com/lfreleng-actions/github-issues-triage#consuming-the-reusable-workflow)
+- [Repository README](https://github.com/lfreleng-actions/github-issues-triage-bot#consuming-the-reusable-workflow)
   — caller examples and input reference.
 
 ## Safety model in brief
