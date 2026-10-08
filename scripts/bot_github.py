@@ -18,8 +18,12 @@ import time
 from typing import Any, cast
 
 API_VERSION = "2026-03-10"
-# gh reports the status in its stderr line: "gh: Not Found (HTTP 404)".
-STATUS_RE = re.compile(r"\(HTTP (\d{3})\)")
+# gh ends its message with the status in one of two forms: after the
+# message of a JSON reply, "gh: Not Found (HTTP 404)", or alone for any
+# other reply, such as an XML error from artifact storage, "gh: HTTP
+# 403". Each alternative is a whole form that ends a line, and the last
+# match wins, so neither a hybrid nor a status quoted earlier counts.
+STATUS_RE = re.compile(r"\(HTTP (\d{3})\)$|^gh: HTTP (\d{3})$", re.MULTILINE)
 ABSENT = frozenset({404, 410})
 TIMEOUT_SECONDS = 60
 TRANSIENT = frozenset({500, 502, 503, 504})
@@ -27,6 +31,15 @@ READ_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 2
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+$")
+
+
+def parse_status(text: str) -> int | None:
+    """The HTTP status gh appends to ``text``, in either of its forms."""
+    matches = STATUS_RE.findall(text)
+    if not matches:
+        return None
+    json_form, bare_form = matches[-1]
+    return int(json_form or bare_form)
 
 
 class GitHubError(Exception):
@@ -37,11 +50,12 @@ class GitHubError(Exception):
     unreachable.
     """
 
-    def __init__(self, message: str) -> None:
-        """Record the message and the status gh named, if any."""
+    def __init__(self, message: str, status: int | None = None) -> None:
+        """Record the message and the status given, or else gh's."""
         super().__init__(message)
-        found = STATUS_RE.search(message)
-        self.status: int | None = int(found.group(1)) if found else None
+        self.status: int | None = (
+            status if status is not None else parse_status(message)
+        )
 
 
 def is_read(args: list[str]) -> bool:

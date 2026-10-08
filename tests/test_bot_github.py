@@ -82,7 +82,6 @@ class RunGhTest(unittest.TestCase):
         sleep.assert_not_called()
         self.assertTrue(github.is_absent(caught.exception))
 
-    @unittest.expectedFailure
     def test_bare_server_error_is_retried(self) -> None:
         """A 502 without a JSON message is as transient as one with it."""
         replies = [completed(stderr="gh: HTTP 502", code=1), completed("ok")]
@@ -137,7 +136,6 @@ class GitHubErrorTest(unittest.TestCase):
         self.assertIsNone(github.GitHubError("gh timed out").status)
         self.assertIsNone(github.GitHubError("(HTTP 40)").status)
 
-    @unittest.expectedFailure
     def test_bare_status_parsed(self) -> None:
         """A reply without a JSON message leaves gh printing ``gh: HTTP nnn``."""
         self.assertEqual(github.GitHubError("gh: HTTP 403").status, 403)
@@ -148,14 +146,12 @@ class GitHubErrorTest(unittest.TestCase):
             with self.subTest(hybrid=hybrid):
                 self.assertIsNone(github.GitHubError(hybrid).status)
 
-    @unittest.expectedFailure
     def test_only_the_status_gh_appends_counts(self) -> None:
         """A status quoted before the one gh appends is not the status."""
         self.assertIsNone(github.GitHubError("see (HTTP 502) in the docs").status)
         quoted = "gh: upstream said (HTTP 502)\nso this is final (HTTP 404)"
         self.assertEqual(github.GitHubError(quoted).status, 404)
 
-    @unittest.expectedFailure
     def test_explicit_status_wins(self) -> None:
         """A caller that knows the status passes it rather than a token."""
         failure = github.GitHubError("gh exit 1 (HTTP 503), then gave up", 503)
