@@ -18,17 +18,20 @@ apply job uses the first; the prepare job uses the second through
 
 Exit status: 0 accepted, with ``artifact_id=<id>`` on stdout; 3 no
 such artifact; 4 artifact refused. Anything else is an operational
-failure.
+failure, after the download has retried a failure GitHub never
+answered or answered with a 500, 502, 503 or 504.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import stat
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 import zlib
 from pathlib import Path
@@ -44,6 +47,9 @@ ZIP_OVERHEAD = 1024 * 1024
 MAX_ENTRIES = 64
 CHUNK = 64 * 1024
 TIMEOUT_SECONDS = 300
+# The tail of gh's stderr, where it appends the HTTP status; none of
+# it is logged.
+ERROR_BYTES = 4096
 NOT_FOUND = 3
 REFUSED = 4
 
@@ -123,15 +129,30 @@ def list_named_artifacts(
     return live[:limit]
 
 
-def download(repository: str, artifact_id: int, target: Path, limit: int) -> None:
-    """Stream the zip to ``target``, stopping past ``limit`` or the deadline."""
+def timed_out() -> github.GitHubError:
+    """The failure for a download that ran past its deadline."""
+    return github.GitHubError(
+        f"artifact download timed out after {TIMEOUT_SECONDS} seconds"
+    )
+
+
+def stream(
+    repository: str, artifact_id: int, target: Path, limit: int, deadline: float
+) -> tuple[int, int | None]:
+    """Make one attempt at streaming the zip to ``target``.
+
+    Returns gh's exit status and the HTTP status its stderr names,
+    or None for the status when no reply arrived.
+    """
     written = 0
     expired = threading.Event()
-    with target.open("wb") as sink:
+    # stderr goes to a file rather than a pipe, which gh could fill
+    # and block on while this loop waits for its stdout.
+    with target.open("wb") as sink, tempfile.TemporaryFile() as errors:
         proc = subprocess.Popen(
             ["gh", "api", f"repos/{repository}/actions/artifacts/{artifact_id}/zip"],
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=errors,
         )
         stdout = proc.stdout
         if stdout is None:
@@ -144,8 +165,13 @@ def download(repository: str, artifact_id: int, target: Path, limit: int) -> Non
 
         # A read blocks until gh writes or exits, so no check between
         # reads can enforce a deadline; killing gh ends the read instead.
-        timer = threading.Timer(TIMEOUT_SECONDS, expire)
-        timer.start()
+        # The budget is read once gh is running, so its start-up counts.
+        seconds = deadline - time.monotonic()
+        timer = threading.Timer(seconds, expire)
+        if seconds > 0:
+            timer.start()
+        else:
+            expire()
         try:
             while True:
                 chunk = stdout.read(CHUNK)
@@ -164,14 +190,54 @@ def download(repository: str, artifact_id: int, target: Path, limit: int) -> Non
             # Still under the timer, so this wait is bounded too.
             proc.wait()
             timer.cancel()
+        # gh appends the status, so read the tail: a long message before
+        # it cannot push it out of reach.
+        size = errors.seek(0, os.SEEK_END)
+        errors.seek(max(0, size - ERROR_BYTES))
+        reported = errors.read(ERROR_BYTES).decode("utf-8", "replace")
     if expired.is_set():
-        raise github.GitHubError(
-            f"artifact download timed out after {TIMEOUT_SECONDS} seconds"
+        raise timed_out()
+    return proc.returncode, github.parse_status(reported)
+
+
+def download(repository: str, artifact_id: int, target: Path, limit: int) -> None:
+    """Stream the zip to ``target``, stopping past ``limit`` or the deadline.
+
+    A failure GitHub never answered, which gh reports without an HTTP
+    status, and a 500, 502, 503 or 504 are retried with the read
+    backoff of ``bot_github``: a runner can lose DNS for a second while
+    harden-runner restarts its resolver, and a download caught in
+    that second fails on the redirect to storage. Any other status or
+    a refusal ends the download at once. One deadline spans every
+    attempt: a backoff that would reach it ends the download rather
+    than sleep past it, and no retry starts once it has passed. gh's
+    message stays out of the error,
+    since for a failed redirect it quotes the signed storage URL,
+    which grants read access to the zip.
+    """
+    deadline = time.monotonic() + TIMEOUT_SECONDS
+    attempts = github.READ_ATTEMPTS
+    for attempt in range(1, attempts + 1):
+        code, status = stream(repository, artifact_id, target, limit, deadline)
+        if code == 0:
+            return
+        reply = "with no HTTP status" if status is None else f"(HTTP {status})"
+        failure = (
+            f"artifact download failed on attempt {attempt} of {attempts}:"
+            f" gh exit {code} {reply}"
         )
-    if proc.returncode != 0:
-        raise github.GitHubError(
-            f"artifact download failed (gh exit {proc.returncode})"
-        )
+        transient = status is None or status in github.TRANSIENT
+        if attempt == attempts or not transient:
+            raise github.GitHubError(failure, status)
+        delay = github.RETRY_DELAY_SECONDS * attempt
+        no_time = github.GitHubError(f"{failure}, with no time left to retry", status)
+        if time.monotonic() + delay >= deadline:
+            raise no_time
+        time.sleep(delay)
+        if time.monotonic() >= deadline:
+            # The sleep resumed late: no retry starts past the deadline.
+            raise no_time
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def check_entry(entry: zipfile.ZipInfo, cap: int) -> None:

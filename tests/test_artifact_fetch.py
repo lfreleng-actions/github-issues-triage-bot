@@ -9,9 +9,11 @@ import io
 import struct
 import sys
 import tempfile
+import threading
 import unittest
 import warnings
 import zipfile
+from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from importlib import import_module
 from pathlib import Path
@@ -26,6 +28,16 @@ evidence = import_module("bot_evidence")
 
 SUMMARY = b"# Session\n\n```json\n{}\n```\n"
 SESSION = fetcher.profiles()["session"]
+# What gh prints when no reply arrives: for a DNS failure, the host
+# alone; for anything else, the request, signed storage URL included.
+DNS_FAILURE = (
+    b"error connecting to productionresultssa1.blob.core.windows.net\n"
+    b"check your internet connection or https://githubstatus.com\n"
+)
+RESET = (
+    b'Get "https://productionresultssa1.blob.core.windows.net/a.zip?sig=SIGNED":'
+    b" read tcp 10.1.0.4:41234->20.209.226.129:443: connection reset by peer\n"
+)
 
 
 def make_zip(entries: dict[str, bytes], path: Path) -> Path:
@@ -59,10 +71,13 @@ def rewrite_headers(
 class FakeProc:
     """A gh process whose stdout is a prepared stream."""
 
-    def __init__(self, payload: bytes, returncode: int = 0) -> None:
-        """Serve ``payload`` and report ``returncode`` once drained."""
+    def __init__(
+        self, payload: bytes, returncode: int = 0, errors: bytes = b""
+    ) -> None:
+        """Serve ``payload``, report ``returncode`` and print ``errors``."""
         self.stdout = io.BytesIO(payload)
         self.returncode = returncode
+        self.errors = errors
         self.killed = False
 
     def kill(self) -> None:
@@ -72,6 +87,23 @@ class FakeProc:
     def wait(self, timeout: float | None = None) -> int:
         """Report the exit status."""
         return self.returncode
+
+
+def spawning(*procs: FakeProc, started: Callable[[], None] | None = None) -> Any:
+    """Patch Popen to start ``procs`` in turn, each printing its stderr.
+
+    ``started`` runs as each one starts, to model the time that takes.
+    """
+    queue = list(procs)
+
+    def spawn(args: list[str], **kwargs: Any) -> FakeProc:
+        if started is not None:
+            started()
+        proc = queue.pop(0)
+        kwargs["stderr"].write(proc.errors)
+        return proc
+
+    return patch.object(fetcher.subprocess, "Popen", side_effect=spawn)
 
 
 class ListingTest(unittest.TestCase):
@@ -266,7 +298,7 @@ class ExtractTest(unittest.TestCase):
 
 
 class DownloadTest(unittest.TestCase):
-    """``download`` streams under a byte bound and reports gh's exit."""
+    """``download`` streams under a byte bound, retrying what GitHub never answered."""
 
     def test_stream_past_limit_is_cut_off(self) -> None:
         """A download that runs past the limit is stopped and refused."""
@@ -280,13 +312,178 @@ class DownloadTest(unittest.TestCase):
         self.assertTrue(proc.killed)
 
     def test_non_zero_exit_is_an_operational_failure(self) -> None:
-        """gh failing after some output is a GitHubError, not a refusal."""
+        """gh failing after some output is a GitHubError, not a refusal.
+
+        A 4xx is GitHub's answer, so it carries its status and is not
+        tried again.
+        """
         with (
-            patch.object(fetcher.subprocess, "Popen", return_value=FakeProc(b"x", 1)),
+            spawning(FakeProc(b"x", 1, b"gh: Not Found (HTTP 404)\n")) as spawn,
+            patch.object(fetcher.time, "sleep") as sleep,
             tempfile.TemporaryDirectory() as holder,
-            self.assertRaisesRegex(github.GitHubError, "gh exit 1"),
+            self.assertRaisesRegex(github.GitHubError, "gh exit 1") as caught,
         ):
             fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
+        self.assertEqual(caught.exception.status, 404)
+        self.assertEqual(spawn.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_bare_client_error_from_storage_is_final(self) -> None:
+        """Storage answers in XML, so gh prints a bare status; a 403 is final."""
+        with (
+            spawning(FakeProc(b"<Error/>", 1, b"gh: HTTP 403\n")) as spawn,
+            patch.object(fetcher.time, "sleep") as sleep,
+            tempfile.TemporaryDirectory() as holder,
+            self.assertRaises(github.GitHubError) as caught,
+        ):
+            fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
+        self.assertEqual(caught.exception.status, 403)
+        self.assertEqual(spawn.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_status_is_read_from_the_tail_of_a_long_message(self) -> None:
+        """gh appends the status, so a long message cannot hide it.
+
+        A final 403 after a message longer than the read stays final,
+        and a 502 after an earlier quoted 404 is still retried.
+        """
+        padding = b"x" * fetcher.ERROR_BYTES
+        final = b"gh: " + padding + b" (HTTP 403)\n"
+        with (
+            spawning(FakeProc(b"", 1, final)) as spawn,
+            patch.object(fetcher.time, "sleep"),
+            tempfile.TemporaryDirectory() as holder,
+            self.assertRaises(github.GitHubError) as caught,
+        ):
+            fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
+        self.assertEqual((caught.exception.status, spawn.call_count), (403, 1))
+        quoted = b"gh: upstream said (HTTP 404)\ngh: " + padding + b" (HTTP 502)\n"
+        with (
+            spawning(FakeProc(b"", 1, quoted), FakeProc(b"abc")) as spawn,
+            patch.object(fetcher.time, "sleep"),
+            tempfile.TemporaryDirectory() as holder,
+        ):
+            fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
+        self.assertEqual(spawn.call_count, 2)
+
+    def test_unanswered_and_server_failures_are_retried(self) -> None:
+        """No reply, then a 502, then the zip is one successful download.
+
+        Each attempt rewrites the target, so the 502's error body that
+        gh printed to stdout does not survive into the archive.
+        """
+        with (
+            spawning(
+                FakeProc(b"", 1, DNS_FAILURE),
+                FakeProc(b'{"message":"Bad Gateway"}', 1, b"gh: Bad (HTTP 502)\n"),
+                FakeProc(b"abc"),
+            ) as spawn,
+            patch.object(fetcher.time, "sleep") as sleep,
+            tempfile.TemporaryDirectory() as holder,
+        ):
+            target = Path(holder) / "a.zip"
+            fetcher.download("o/r", 5, target, 1024)
+            self.assertEqual(target.read_bytes(), b"abc")
+        self.assertEqual(spawn.call_count, 3)
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list],
+            [github.RETRY_DELAY_SECONDS, github.RETRY_DELAY_SECONDS * 2],
+        )
+
+    def test_retries_end_at_the_budget_without_echoing_gh(self) -> None:
+        """The last failure names the attempt, never gh's signed URL."""
+        attempts = github.READ_ATTEMPTS
+        with (
+            spawning(*(FakeProc(b"", 1, RESET) for _ in range(attempts))) as spawn,
+            patch.object(fetcher.time, "sleep"),
+            tempfile.TemporaryDirectory() as holder,
+            self.assertRaises(github.GitHubError) as caught,
+        ):
+            fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
+        message = str(caught.exception)
+        self.assertEqual(spawn.call_count, attempts)
+        self.assertIn(f"attempt {attempts} of {attempts}", message)
+        self.assertIn("no HTTP status", message)
+        self.assertNotIn("sig=", message)
+        self.assertIsNone(caught.exception.status)
+
+    def test_deadline_spans_every_attempt(self) -> None:
+        """Each timer gets only what start-up and the backoff have left."""
+        clock = [0.0]
+        intervals: list[float] = []
+        start_timer = threading.Timer
+        startup = 5.0
+
+        def wait(seconds: float) -> None:
+            clock[0] += seconds
+
+        def timer(interval: float, function: Any) -> threading.Timer:
+            intervals.append(interval)
+            return start_timer(interval, function)
+
+        with (
+            spawning(
+                FakeProc(b"", 1, DNS_FAILURE),
+                FakeProc(b"abc"),
+                started=lambda: wait(startup),
+            ),
+            patch.object(fetcher.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(fetcher.time, "sleep", side_effect=wait),
+            patch.object(fetcher.threading, "Timer", side_effect=timer),
+            tempfile.TemporaryDirectory() as holder,
+        ):
+            fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
+        budget = fetcher.TIMEOUT_SECONDS
+        delay = github.RETRY_DELAY_SECONDS
+        self.assertEqual(intervals, [budget - startup, budget - 2 * startup - delay])
+
+    def test_start_up_that_spends_the_deadline_times_out(self) -> None:
+        """With nothing left once gh runs, it is stopped and the attempt ends."""
+        clock = [0.0]
+        proc = FakeProc(b"abc")
+
+        def start() -> None:
+            clock[0] += fetcher.TIMEOUT_SECONDS
+
+        with (
+            spawning(proc, started=start),
+            patch.object(fetcher.time, "monotonic", side_effect=lambda: clock[0]),
+            tempfile.TemporaryDirectory() as holder,
+            self.assertRaisesRegex(github.GitHubError, "timed out"),
+        ):
+            fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
+        self.assertTrue(proc.killed)
+
+    def test_backoff_never_outlasts_the_deadline(self) -> None:
+        """A backoff that would reach the deadline ends the download."""
+        with (
+            spawning(FakeProc(b"", 1, DNS_FAILURE)) as spawn,
+            patch.object(fetcher, "TIMEOUT_SECONDS", github.RETRY_DELAY_SECONDS),
+            patch.object(fetcher.time, "monotonic", return_value=0.0),
+            patch.object(fetcher.time, "sleep") as sleep,
+            tempfile.TemporaryDirectory() as holder,
+            self.assertRaisesRegex(github.GitHubError, "no time left to retry"),
+        ):
+            fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
+        self.assertEqual(spawn.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_no_retry_starts_after_a_late_backoff(self) -> None:
+        """A sleep that resumes past the deadline starts no second gh."""
+        clock = [0.0]
+
+        def oversleep(seconds: float) -> None:
+            clock[0] += fetcher.TIMEOUT_SECONDS
+
+        with (
+            spawning(FakeProc(b"", 1, DNS_FAILURE), FakeProc(b"abc")) as spawn,
+            patch.object(fetcher.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(fetcher.time, "sleep", side_effect=oversleep),
+            tempfile.TemporaryDirectory() as holder,
+            self.assertRaisesRegex(github.GitHubError, "no time left to retry"),
+        ):
+            fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
+        self.assertEqual(spawn.call_count, 1)
 
     def test_complete_stream_written(self) -> None:
         """A stream within the limit lands on disk byte for byte."""
