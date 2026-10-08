@@ -311,7 +311,6 @@ class DownloadTest(unittest.TestCase):
             fetcher.download("o/r", 5, Path(holder) / "a.zip", fetcher.CHUNK * 2)
         self.assertTrue(proc.killed)
 
-    @unittest.expectedFailure
     def test_non_zero_exit_is_an_operational_failure(self) -> None:
         """gh failing after some output is a GitHubError, not a refusal.
 
@@ -329,7 +328,6 @@ class DownloadTest(unittest.TestCase):
         self.assertEqual(spawn.call_count, 1)
         sleep.assert_not_called()
 
-    @unittest.expectedFailure
     def test_bare_client_error_from_storage_is_final(self) -> None:
         """Storage answers in XML, so gh prints a bare status; a 403 is final."""
         with (
@@ -343,7 +341,6 @@ class DownloadTest(unittest.TestCase):
         self.assertEqual(spawn.call_count, 1)
         sleep.assert_not_called()
 
-    @unittest.expectedFailure
     def test_status_is_read_from_the_tail_of_a_long_message(self) -> None:
         """gh appends the status, so a long message cannot hide it.
 
@@ -369,7 +366,6 @@ class DownloadTest(unittest.TestCase):
             fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
         self.assertEqual(spawn.call_count, 2)
 
-    @unittest.expectedFailure
     def test_unanswered_and_server_failures_are_retried(self) -> None:
         """No reply, then a 502, then the zip is one successful download.
 
@@ -394,7 +390,6 @@ class DownloadTest(unittest.TestCase):
             [github.RETRY_DELAY_SECONDS, github.RETRY_DELAY_SECONDS * 2],
         )
 
-    @unittest.expectedFailure
     def test_retries_end_at_the_budget_without_echoing_gh(self) -> None:
         """The last failure names the attempt, never gh's signed URL."""
         attempts = github.READ_ATTEMPTS
@@ -412,7 +407,6 @@ class DownloadTest(unittest.TestCase):
         self.assertNotIn("sig=", message)
         self.assertIsNone(caught.exception.status)
 
-    @unittest.expectedFailure
     def test_deadline_spans_every_attempt(self) -> None:
         """Each timer gets only what start-up and the backoff have left."""
         clock = [0.0]
@@ -443,7 +437,6 @@ class DownloadTest(unittest.TestCase):
         delay = github.RETRY_DELAY_SECONDS
         self.assertEqual(intervals, [budget - startup, budget - 2 * startup - delay])
 
-    @unittest.expectedFailure
     def test_start_up_that_spends_the_deadline_times_out(self) -> None:
         """With nothing left once gh runs, it is stopped and the attempt ends."""
         clock = [0.0]
@@ -461,7 +454,6 @@ class DownloadTest(unittest.TestCase):
             fetcher.download("o/r", 5, Path(holder) / "a.zip", 1024)
         self.assertTrue(proc.killed)
 
-    @unittest.expectedFailure
     def test_backoff_never_outlasts_the_deadline(self) -> None:
         """A backoff that would reach the deadline ends the download."""
         with (
@@ -476,7 +468,6 @@ class DownloadTest(unittest.TestCase):
         self.assertEqual(spawn.call_count, 1)
         sleep.assert_not_called()
 
-    @unittest.expectedFailure
     def test_no_retry_starts_after_a_late_backoff(self) -> None:
         """A sleep that resumes past the deadline starts no second gh."""
         clock = [0.0]
