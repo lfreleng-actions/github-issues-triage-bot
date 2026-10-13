@@ -441,7 +441,6 @@ class WorkflowContractTests(WorkflowCase):
             with self.subTest(option=option):
                 self.assertIn(f"'{option}')", mapping)
 
-    @unittest.expectedFailure
     def test_cron_options_job_blocks_with_the_allow_list(self) -> None:
         """Block mode without allowed-endpoints configures no egress rules.
 

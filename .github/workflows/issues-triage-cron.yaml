@@ -72,11 +72,22 @@ jobs:
     outputs:
       model: "${{ steps.map.outputs.id }}"
     steps:
+      # The loader reads the public .github repository and needs no
+      # token, so the job keeps empty permissions.
+      - name: 'Load egress allow-list'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/harden-runner-block-action@a32eb064a1188f6b0f15d2c0c0381efe54b0dd22 # v0.12.2
+        with:
+          # yamllint disable-line rule:line-length
+          config: '@ac32415b91e0b6db1166bc451024c472cdbcbd3d'  # v0.16.8
+          allow_list_summary: 'false'
+
       - name: 'Harden runner'
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: 'block'
+          allowed-endpoints: "${{ env.CONNECTION_ALLOW_LIST }}"
 
       # Display names in the dispatch form map to the identifiers the
       # Copilot CLI accepts. Schedule events carry no inputs, so the
