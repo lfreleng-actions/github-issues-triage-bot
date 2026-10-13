@@ -441,6 +441,37 @@ class WorkflowContractTests(WorkflowCase):
             with self.subTest(option=option):
                 self.assertIn(f"'{option}')", mapping)
 
+    def test_cron_options_job_blocks_with_the_allow_list(self) -> None:
+        """Block mode without allowed-endpoints configures no egress rules.
+
+        The options job loads the same allow-list coordinate the cron
+        hands to the reusable workflow, without a token or summary.
+        """
+        cron: dict[str, Any] = yaml.safe_load(
+            (WORKFLOW.parent / "issues-triage-cron.yaml").read_text(encoding="utf-8")
+        )
+        job = cron["jobs"]["options"]
+        self.assertEqual(job["permissions"], {})
+        uses = [str(step.get("uses", "")).split("@")[0] for step in job["steps"]]
+        loader_action = "lfreleng-actions/harden-runner-block-action"
+        harden_action = "step-security/harden-runner"
+        self.assertEqual(uses.count(loader_action), 1)
+        self.assertEqual(uses.count(harden_action), 1)
+        self.assertLess(uses.index(loader_action), uses.index(harden_action))
+        loader = job["steps"][uses.index(loader_action)]["with"]
+        self.assertEqual(
+            loader,
+            {
+                "config": cron["jobs"]["triage"]["with"]["egress_allow_config"],
+                "allow_list_summary": "false",
+            },
+        )
+        harden = job["steps"][uses.index(harden_action)]["with"]
+        self.assertEqual(harden["egress-policy"], "block")
+        self.assertEqual(
+            harden["allowed-endpoints"], "${{ env.CONNECTION_ALLOW_LIST }}"
+        )
+
     def test_copilot_policy_declares_reads_and_still_denies_writes(self) -> None:
         """Declaring auto-approved reads must not relax the enforced denials."""
         script: str = self.step("propose", "Run triage agent")["run"]
