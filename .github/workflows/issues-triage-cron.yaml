@@ -119,7 +119,7 @@ jobs:
       # the propose job is always audit.
       egress_policy: 'block'
       # yamllint disable-line rule:line-length
-      egress_allow_config: '@e0e35011ee145321a51d3226f044ec88dfe645b1'  # v0.16.4
+      egress_allow_config: '@ac32415b91e0b6db1166bc451024c472cdbcbd3d'  # v0.16.8
       # Repository-level credentials reach trusted preparation
       # and application actions, never an action in the agent job.
       # No client id permits dry-run fallback; a missing key fails
