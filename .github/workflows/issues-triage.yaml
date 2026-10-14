@@ -114,7 +114,7 @@ jobs:
       - name: 'Load egress allow-list'
         if: inputs.egress_policy == 'block'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/harden-runner-block-action@a32eb064a1188f6b0f15d2c0c0381efe54b0dd22 # v0.12.2
+        uses: lfreleng-actions/harden-runner-block-action@51ef68401547a8b648275129b9a21544612596d5 # v0.13.1
         with:
           config: "${{ inputs.egress_allow_config }}"
           allow_list_summary: 'true'
@@ -532,7 +532,7 @@ jobs:
       - name: 'Load egress allow-list'
         if: inputs.egress_policy == 'block'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/harden-runner-block-action@a32eb064a1188f6b0f15d2c0c0381efe54b0dd22 # v0.12.2
+        uses: lfreleng-actions/harden-runner-block-action@51ef68401547a8b648275129b9a21544612596d5 # v0.13.1
         with:
           config: "${{ inputs.egress_allow_config }}"
           allow_list_summary: 'false'
