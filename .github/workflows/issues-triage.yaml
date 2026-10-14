@@ -304,7 +304,7 @@ jobs:
       - name: 'Publish prepared evidence'
         id: evidence
         # yamllint disable-line rule:line-length
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: "triage-evidence-${{ steps.identity.outputs.namespace }}"
           path: 'artefacts/'
@@ -506,7 +506,7 @@ jobs:
         id: session
         if: always()
         # yamllint disable-line rule:line-length
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Namespace comes from Prepare; attempt distinguishes a
           # proposal-only rerun. Apply downloads the producer ID.
@@ -705,7 +705,7 @@ jobs:
       - name: 'Attach run artefacts'
         if: always()
         # yamllint disable-line rule:line-length
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Apply-only reruns retain original producer IDs but get
           # a fresh report name, avoiding immutable-name conflicts.
