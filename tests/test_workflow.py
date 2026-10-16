@@ -25,6 +25,7 @@ import yaml  # pyright: ignore[reportMissingModuleSource]
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "issues-triage.yaml"
+SPLITTER = "lfreleng-actions/list-splitter-action"
 
 
 class WorkflowCase(unittest.TestCase):
@@ -725,6 +726,82 @@ class PreflightContracts(WorkflowCase):
                 )
 
 
+class ListInputContracts(WorkflowCase):
+    """Operator lists are split and checked once, before any token exists."""
+
+    # Splitter step id for each list input.
+    LISTS = {"repository": "repository", "exclude_repos": "exclusions"}
+
+    def position(self, job: str, identity: str) -> int:
+        """Index of a step, for ordering contracts."""
+        return self.jobs[job]["steps"].index(self.step(job, identity))
+
+    @unittest.expectedFailure
+    def test_each_list_is_split_as_repository_names_of_the_org(self) -> None:
+        """Bare names of the trusted owner, offline, with no token to hand."""
+        self.assertEqual(len(self.actions("prepare", SPLITTER)), len(self.LISTS))
+        for name, identity in self.LISTS.items():
+            with self.subTest(input=name):
+                split = self.step("prepare", identity)
+                self.assertTrue(split["uses"].startswith(SPLITTER + "@"))
+                self.assertEqual(split["with"]["list"], f"${{{{ inputs.{name} }}}}")
+                self.assertEqual(split["with"]["validate"], "repository")
+                self.assertEqual(split["with"]["owner"], "${{ inputs.org }}")
+                self.assertEqual(split["with"]["token"], "")
+                self.assertNotIn("verify", split["with"])
+
+    @unittest.expectedFailure
+    def test_lists_are_split_before_the_input_check_and_the_mint(self) -> None:
+        """A bad name fails the run before the App key is used."""
+        for identity in self.LISTS.values():
+            with self.subTest(step=identity):
+                self.assert_before("prepare", identity, "Check inputs")
+                self.assert_before("prepare", identity, "app-token")
+        check = self.step("prepare", "Check inputs")["env"]
+        self.assertEqual(
+            check["REPOSITORY_COUNT"], "${{ steps.repository.outputs.count }}"
+        )
+
+    @unittest.expectedFailure
+    def test_one_checked_repository_reaches_every_consumer(self) -> None:
+        """Both mints, both snapshots, the prompt and the applier agree."""
+        checked = "${{ steps.repository.outputs.csv }}"
+        handed_on = "${{ needs.prepare.outputs.repository }}"
+        self.assertEqual(self.jobs["prepare"]["outputs"]["repository"], checked)
+        mint = "actions/create-github-app-token"
+        self.assertEqual(
+            self.actions("prepare", mint)[0]["with"]["repositories"], checked
+        )
+        self.assertEqual(
+            self.actions("apply", mint)[0]["with"]["repositories"], handed_on
+        )
+        before = self.step("prepare", "before")["env"]
+        self.assertEqual(before["REPOSITORY"], checked)
+        self.assertEqual(before["EXCLUDE_REPOS"], "${{ steps.exclusions.outputs.csv }}")
+        for job, identity, variable in (
+            ("propose", "Assemble prompt", "REPOSITORY"),
+            ("apply", "apply", "TRIAGE_REPOSITORY"),
+            ("apply", "after", "REPOSITORY"),
+        ):
+            with self.subTest(job=job, step=identity):
+                env = self.step(job, identity)["env"]
+                self.assertEqual(env[variable], handed_on)
+
+    @unittest.expectedFailure
+    def test_raw_list_inputs_reach_the_splitters_alone(self) -> None:
+        """No other step reads repository or exclude_repos as typed."""
+        splitters = {id(step) for step in self.actions("prepare", SPLITTER)}
+        self.assertEqual(len(splitters), len(self.LISTS))
+        for job, definition in self.jobs.items():
+            for step in definition.get("steps", []):
+                if id(step) in splitters:
+                    continue
+                with self.subTest(job=job, step=step.get("name")):
+                    text = json.dumps(step)
+                    for name in self.LISTS:
+                        self.assertNotRegex(text, rf"inputs\.{name}\b")
+
+
 class SelfRepositoryCallTests(unittest.TestCase):
     """Check the local callee contract while actionlint lacks $/ support."""
 
@@ -1154,10 +1231,27 @@ class WorkflowScriptTests(WorkflowCase):
             ("a;b", False),
         ):
             with self.subTest(model=model):
-                result = self.run_step("prepare", "Check inputs", MODEL=model)
+                result = self.run_step(
+                    "prepare", "Check inputs", MODEL=model, REPOSITORY_COUNT="0"
+                )
                 self.assertEqual(result.returncode == 0, accepted, result.stderr)
                 if not accepted:
                     self.assertIn("::error::model must be", result.stdout)
+
+    @unittest.expectedFailure
+    def test_repository_input_names_one_repository_at_most(self) -> None:
+        """The split repository list holds none or one name, never more."""
+        for count, accepted in (("0", True), ("1", True), ("2", False), ("", False)):
+            with self.subTest(count=count):
+                result = self.run_step(
+                    "prepare",
+                    "Check inputs",
+                    MODEL="claude-opus-5.5",
+                    REPOSITORY_COUNT=count,
+                )
+                self.assertEqual(result.returncode == 0, accepted, result.stderr)
+                if not accepted:
+                    self.assertIn("::error::repository names", result.stdout)
 
     def test_digest_script_hashes_exact_prepared_bytes(self) -> None:
         """Trusted outputs cover both snapshot and effective scope, including newlines."""
