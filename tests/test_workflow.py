@@ -721,9 +721,6 @@ class PreflightContracts(WorkflowCase):
         for job, step in mints:
             with self.subTest(job=job):
                 self.assertEqual(step["with"]["owner"], "${{ inputs.org }}")
-                self.assertEqual(
-                    step["with"]["repositories"], "${{ inputs.repository }}"
-                )
 
 
 class ListInputContracts(WorkflowCase):
@@ -736,7 +733,6 @@ class ListInputContracts(WorkflowCase):
         """Index of a step, for ordering contracts."""
         return self.jobs[job]["steps"].index(self.step(job, identity))
 
-    @unittest.expectedFailure
     def test_each_list_is_split_as_repository_names_of_the_org(self) -> None:
         """Bare names of the trusted owner, offline, with no token to hand."""
         self.assertEqual(len(self.actions("prepare", SPLITTER)), len(self.LISTS))
@@ -750,7 +746,6 @@ class ListInputContracts(WorkflowCase):
                 self.assertEqual(split["with"]["token"], "")
                 self.assertNotIn("verify", split["with"])
 
-    @unittest.expectedFailure
     def test_lists_are_split_before_the_input_check_and_the_mint(self) -> None:
         """A bad name fails the run before the App key is used."""
         for identity in self.LISTS.values():
@@ -762,7 +757,6 @@ class ListInputContracts(WorkflowCase):
             check["REPOSITORY_COUNT"], "${{ steps.repository.outputs.count }}"
         )
 
-    @unittest.expectedFailure
     def test_one_checked_repository_reaches_every_consumer(self) -> None:
         """Both mints, both snapshots, the prompt and the applier agree."""
         checked = "${{ steps.repository.outputs.csv }}"
@@ -787,7 +781,6 @@ class ListInputContracts(WorkflowCase):
                 env = self.step(job, identity)["env"]
                 self.assertEqual(env[variable], handed_on)
 
-    @unittest.expectedFailure
     def test_raw_list_inputs_reach_the_splitters_alone(self) -> None:
         """No other step reads repository or exclude_repos as typed."""
         splitters = {id(step) for step in self.actions("prepare", SPLITTER)}
@@ -1238,7 +1231,6 @@ class WorkflowScriptTests(WorkflowCase):
                 if not accepted:
                     self.assertIn("::error::model must be", result.stdout)
 
-    @unittest.expectedFailure
     def test_repository_input_names_one_repository_at_most(self) -> None:
         """The split repository list holds none or one name, never more."""
         for count, accepted in (("0", True), ("1", True), ("2", False), ("", False)):

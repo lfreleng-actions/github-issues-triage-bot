@@ -37,7 +37,7 @@ on:
         type: string
         default: ''
       exclude_repos:
-        description: 'Comma-separated repos to skip (overrides bundled list)'
+        description: 'Repos to skip, commas and/or spaces; overrides bundle'
         type: string
         default: ''
 
@@ -110,6 +110,9 @@ jobs:
       before_sha256: "${{ steps.digests.outputs.before }}"
       exclusions_sha256: "${{ steps.digests.outputs.exclusions }}"
       run_agent: "${{ steps.before.outputs.run_agent }}"
+      # The checked repository name, blank for the whole owner; later
+      # jobs read this, never the raw input.
+      repository: "${{ steps.repository.outputs.csv }}"
     steps:
       - name: 'Load egress allow-list'
         if: inputs.egress_policy == 'block'
@@ -141,12 +144,41 @@ jobs:
               output.write(f'namespace={namespace}\n')
           PY
 
+      # Operator lists: commas, spaces or newlines between bare names
+      # of the target owner. Each splits offline, with no token, and a
+      # bad name fails the run before the App key is used, every
+      # mistake reported at once. Repeats collapse without regard to
+      # case, as GitHub compares repository names.
+      - name: 'Split repository'
+        id: repository
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/list-splitter-action@b56a625474875d05ca8d1c1eb3314c29c526c9a6 # v0.1.0
+        with:
+          list: "${{ inputs.repository }}"
+          validate: 'repository'
+          owner: "${{ inputs.org }}"
+          token: ''
+
+      - name: 'Split excluded repositories'
+        id: exclusions
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/list-splitter-action@b56a625474875d05ca8d1c1eb3314c29c526c9a6 # v0.1.0
+        with:
+          list: "${{ inputs.exclude_repos }}"
+          validate: 'repository'
+          owner: "${{ inputs.org }}"
+          token: ''
+
       - name: 'Check inputs'
         env:
           MODEL: "${{ inputs.model }}"
+          REPOSITORY_COUNT: "${{ steps.repository.outputs.count }}"
         run: |
           [[ "$MODEL" =~ ^[a-z0-9.-]+$ ]] || {
             echo '::error::model must be a lower-case identifier'; exit 1; }
+          # Both tokens and the issue search take one repository.
+          [[ "$REPOSITORY_COUNT" =~ ^[01]$ ]] || {
+            echo '::error::repository names one repository at most'; exit 1; }
 
       - name: 'Require App for live runs'
         if: ${{ !inputs.dry_run && inputs.github_app_client_id == '' }}
@@ -233,7 +265,7 @@ jobs:
           client-id: "${{ inputs.github_app_client_id }}"
           private-key: "${{ secrets.github_app_private_key }}"
           owner: "${{ inputs.org }}"
-          repositories: "${{ inputs.repository }}"
+          repositories: "${{ steps.repository.outputs.csv }}"
           permission-issues: 'read'
           permission-metadata: 'read'
 
@@ -256,8 +288,8 @@ jobs:
         env:
           GH_TOKEN: "${{ steps.app-token.outputs.token || github.token }}"
           ORG: "${{ inputs.org }}"
-          REPOSITORY: "${{ inputs.repository }}"
-          EXCLUDE_REPOS: "${{ inputs.exclude_repos }}"
+          REPOSITORY: "${{ steps.repository.outputs.csv }}"
+          EXCLUDE_REPOS: "${{ steps.exclusions.outputs.csv }}"
           EXCLUDE_FILE: 'triage-assets/config/excluded-repos.txt'
           SKIP_AGENT: "${{ inputs.skip_agent }}"
           RETRIAGE: "${{ inputs.retriage }}"
@@ -364,7 +396,7 @@ jobs:
           ORG: "${{ inputs.org }}"
           DRY_RUN: "${{ inputs.dry_run }}"
           RETRIAGE: "${{ inputs.retriage }}"
-          REPOSITORY: "${{ inputs.repository }}"
+          REPOSITORY: "${{ needs.prepare.outputs.repository }}"
         run: |
           {
             cat triage-assets/prompt/triage.md
@@ -635,7 +667,7 @@ jobs:
           client-id: "${{ inputs.github_app_client_id }}"
           private-key: "${{ secrets.github_app_private_key }}"
           owner: "${{ inputs.org }}"
-          repositories: "${{ inputs.repository }}"
+          repositories: "${{ needs.prepare.outputs.repository }}"
           # Even a reporting-only job must never mint write access.
           # yamllint disable-line rule:line-length
           permission-issues: "${{ !inputs.dry_run && needs.propose.result == 'success' && steps.proposal.outcome == 'success' && 'write' || 'read' }}"
@@ -659,7 +691,7 @@ jobs:
         env:
           GH_TOKEN: "${{ steps.app-token.outputs.token || github.token }}"
           TRIAGE_ORG: "${{ inputs.org }}"
-          TRIAGE_REPOSITORY: "${{ inputs.repository }}"
+          TRIAGE_REPOSITORY: "${{ needs.prepare.outputs.repository }}"
           TRIAGE_EXCLUDE_FILE: 'evidence/excluded-repos.txt'
           TRIAGE_RETRIAGE: "${{ inputs.retriage }}"
           DRY_RUN: "${{ inputs.dry_run }}"
@@ -677,7 +709,7 @@ jobs:
         env:
           GH_TOKEN: "${{ steps.app-token.outputs.token || github.token }}"
           ORG: "${{ inputs.org }}"
-          REPOSITORY: "${{ inputs.repository }}"
+          REPOSITORY: "${{ needs.prepare.outputs.repository }}"
           EXCLUDE_FILE: 'evidence/excluded-repos.txt'
         run: |
           bash triage-assets/scripts/snapshot.sh artefacts/after.json
