@@ -166,7 +166,7 @@ Propose never receives it.
 | `retriage` | `false` | Re-examine issues that carry labels |
 | `skip_agent` | `false` | Plumbing test: skip the agent session |
 | `repository` | `''` | Restrict the scan to one repository |
-| `exclude_repos` | `''` | Comma-separated repositories to skip |
+| `exclude_repos` | `''` | Repositories to skip; commas and/or spaces |
 | `egress_policy` | `audit` | harden-runner mode for Prepare and Apply; Propose always audits |
 | `egress_allow_config` | `''` | `harden-runner-block-action` config coordinate |
 | `github_app_client_id` | `''` | App auth; empty limits runs to dry-run |

@@ -126,7 +126,8 @@ A scan reaching the 1,000-result search cap fails visibly **before**
 exclusion filtering. Restrict `repository` rather than accepting an
 incomplete scan. Exclusions use repository names, trim whitespace,
 ignore blank lines and normalize case. A non-empty `exclude_repos`
-input overrides the bundled list; file-based lists allow `#` comments.
+input, separated by commas and/or spaces, overrides the bundled list;
+file-based lists allow `#` comments.
 
 Live organisation configuration read failures are fatal. Dry-run
 alone permits known endpoint absence or missing permission and

@@ -104,7 +104,13 @@ reads and an issue grant chosen for the path: `write` for live mode
 with successful proposal/export gates, otherwise `read`.
 
 A single-repository input scopes both installation tokens at mint
-time. Tokens expire after an hour. The calling workflow names the
+time. Prepare checks it, with `exclude_repos`, through
+[`list-splitter-action`](https://github.com/lfreleng-actions/list-splitter-action)
+before either mint: each must hold bare repository names of `org`,
+and `repository` one name at most. The splitter works offline and
+takes no token. Prepare publishes the checked name as a job output,
+and every later step, both mints included, reads that rather than
+the input. Tokens expire after an hour. The calling workflow names the
 credentials by role, as every bot repository in the organisation
 does: `vars.BOT_APP_CLIENT_ID` and `secrets.BOT_APP_PRIVATE_KEY`.
 In this organisation the App behind them is **LF/RelEng Issues
@@ -276,7 +282,8 @@ completion-time guarantee.
 
 Exclusions use repository names, trim whitespace, drop blank lines
 and normalize case. File-based lists allow `#` comments; a non-empty
-`exclude_repos` overrides the bundled list. Snapshot publication
+`exclude_repos`, separated by commas and/or spaces, overrides the
+bundled list. Snapshot publication
 uses temporary files so failed queries do not publish partial JSON.
 
 The workflow keeps three artefacts with distinct lifetimes:
