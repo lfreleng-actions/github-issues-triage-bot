@@ -709,6 +709,55 @@ class PreflightContracts(WorkflowCase):
             self.step("prepare", "Install zizmor")["run"], r"zizmor==\d+\.\d+\.\d+"
         )
 
+    def test_uv_setup_works_outside_the_workspace(self) -> None:
+        """setup-uv looks up Python in the runner's temp directory, settings off."""
+        setup = self.step("prepare", "Set up uv")
+        self.assertEqual(setup["with"]["working-directory"], "${{ runner.temp }}")
+        self.assertEqual(
+            setup["env"],
+            {"UV_NO_CONFIG": "1", "UV_SYSTEM_PYTHON": "1", "UV_NO_PROJECT": "1"},
+        )
+
+    def test_gate_environment_is_built_outside_the_workspace(self) -> None:
+        """uv run gets an interpreter found in RUNNER_TEMP and an env there."""
+        run = self.step("prepare", "Pre-flight: workflow contracts and audit")["run"]
+        run = " ".join(run.replace("\\\n", " ").split())
+        self.assertIn(
+            'py="$(cd "$RUNNER_TEMP" &&'
+            ' UV_NO_CONFIG=1 uv python find --system --no-project)"',
+            run,
+        )
+        self.assertIn('if [ -z "$py" ]; then', run)
+        self.assertIn(
+            'UV_PROJECT_ENVIRONMENT="$RUNNER_TEMP/preflight-venv"'
+            ' uv run --locked --python "$py" python -B scripts/preflight.py',
+            run,
+        )
+
+    def test_preflight_isolation_runs_the_prepare_steps_verbatim(self) -> None:
+        """The planted-workspace job in testing.yaml copies the uv steps exactly."""
+        testing: dict[str, Any] = yaml.safe_load(
+            (WORKFLOW.parent / "testing.yaml").read_text(encoding="utf-8")
+        )
+        job = testing["jobs"]["preflight-isolation"]
+        self.assertEqual(job["permissions"], {"contents": "read"})
+        steps = {step.get("name"): step for step in job["steps"]}
+        names = list(steps)
+        self.assertEqual(steps["Checkout assets"]["with"]["path"], "triage-assets")
+        mirrored = (
+            "Set up uv",
+            "Install zizmor",
+            "Pre-flight: workflow contracts and audit",
+        )
+        for name in mirrored:
+            with self.subTest(step=name):
+                self.assertEqual(steps[name], self.step("prepare", name))
+        plant = "Plant interpreters and uv settings"
+        self.assertIn('plant "$GITHUB_WORKSPACE"\n', steps[plant]["run"])
+        self.assertIn('plant "$GITHUB_WORKSPACE/triage-assets"', steps[plant]["run"])
+        self.assertLess(names.index(plant), names.index(mirrored[0]))
+        self.assertEqual(names[-1], "Check no planted interpreter ran")
+
     def test_every_mint_owner_is_the_trusted_org_input(self) -> None:
         """owner is literally inputs.org on every create-github-app-token step."""
         mints = [
@@ -964,6 +1013,64 @@ class WorkflowScriptTests(WorkflowCase):
         )
 
     bash: str
+
+    def run_preflight_with_stub_uv(
+        self, found: str
+    ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
+        """Run the real pre-flight step; a stub uv logs each call it gets."""
+        (self.root / "triage-assets").mkdir()
+        runner_temp = self.root / "runner-temp"
+        runner_temp.mkdir()
+        log = self.root / "uv-log"
+        uv = self.root / "bin" / "uv"
+        uv.write_text(
+            "#!/bin/sh\n"
+            'printf "%s|%s|%s|%s\\n" "$(pwd -P)" "${UV_NO_CONFIG:-}"'
+            ' "${UV_PROJECT_ENVIRONMENT:-}" "$*" >> "$UV_LOG"\n'
+            'if [ "$1" = python ]; then printf "%s" "$STUB_PY"; fi\n',
+            encoding="utf-8",
+        )
+        uv.chmod(0o755)
+        result = self.run_step(
+            "prepare",
+            "Pre-flight: workflow contracts and audit",
+            RUNNER_TEMP=str(runner_temp),
+            UV_LOG=str(log),
+            STUB_PY=found,
+        )
+        calls = [
+            line.split("|") for line in log.read_text(encoding="utf-8").splitlines()
+        ]
+        return result, calls
+
+    def test_preflight_runs_uv_with_an_interpreter_found_in_runner_temp(
+        self,
+    ) -> None:
+        """Python is found from RUNNER_TEMP; the env is built there too."""
+        result, calls = self.run_preflight_with_stub_uv("/usr/bin/python3")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        runner_temp = str(self.root / "runner-temp")
+        self.assertEqual(len(calls), 2)
+        (find_cwd, find_no_config, _, find), (run_cwd, _, run_env, run) = calls
+        self.assertEqual(Path(find_cwd), Path(runner_temp).resolve())
+        self.assertEqual(find_no_config, "1")
+        self.assertEqual(find, "python find --system --no-project")
+        self.assertEqual(Path(run_cwd), (self.root / "triage-assets").resolve())
+        self.assertEqual(run_env, runner_temp + "/preflight-venv")
+        self.assertEqual(
+            run,
+            "run --locked --python /usr/bin/python3"
+            " python -B scripts/preflight.py workflow --root .",
+        )
+
+    def test_preflight_stops_when_no_interpreter_is_found(self) -> None:
+        """An empty lookup fails the step before uv run starts."""
+        result, calls = self.run_preflight_with_stub_uv("")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("::error::No Python interpreter found", result.stdout)
+        self.assertEqual(
+            [call[3] for call in calls], ["python find --system --no-project"]
+        )
 
     @classmethod
     def setUpClass(cls) -> None:
