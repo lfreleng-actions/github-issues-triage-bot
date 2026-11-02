@@ -76,15 +76,15 @@ jobs:
       # token, so the job keeps empty permissions.
       - name: 'Load egress allow-list'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8 # v0.14.0
+        uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
         with:
           # yamllint disable-line rule:line-length
-          config: '@ac32415b91e0b6db1166bc451024c472cdbcbd3d'  # v0.16.8
+          config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
           allow_list_summary: 'false'
 
       - name: 'Harden runner'
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
         with:
           egress-policy: 'block'
           allowed-endpoints: "${{ env.CONNECTION_ALLOW_LIST }}"
@@ -130,7 +130,7 @@ jobs:
       # the propose job is always audit.
       egress_policy: 'block'
       # yamllint disable-line rule:line-length
-      egress_allow_config: '@ac32415b91e0b6db1166bc451024c472cdbcbd3d'  # v0.16.8
+      egress_allow_config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
       # Repository-level credentials reach trusted preparation
       # and application actions, never an action in the agent job.
       # No client id permits dry-run fallback; a missing key fails

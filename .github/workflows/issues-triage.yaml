@@ -117,14 +117,14 @@ jobs:
       - name: 'Load egress allow-list'
         if: inputs.egress_policy == 'block'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8 # v0.14.0
+        uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
         with:
           config: "${{ inputs.egress_allow_config }}"
           allow_list_summary: 'true'
 
       - name: 'Harden runner'
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
         with:
           egress-policy: "${{ inputs.egress_policy }}"
           allowed-endpoints: "${{ env.CONNECTION_ALLOW_LIST }}"
@@ -223,7 +223,7 @@ jobs:
       # shapes from the environment and prints nothing it read.
       - name: 'Set up uv'
         # yamllint disable-line rule:line-length
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           enable-cache: false
 
@@ -365,7 +365,7 @@ jobs:
       # repository.
       - name: 'Harden runner (audit)'
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
         with:
           egress-policy: 'audit'
 
@@ -564,14 +564,14 @@ jobs:
       - name: 'Load egress allow-list'
         if: inputs.egress_policy == 'block'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8 # v0.14.0
+        uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
         with:
           config: "${{ inputs.egress_allow_config }}"
           allow_list_summary: 'false'
 
       - name: 'Harden runner'
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
         with:
           egress-policy: "${{ inputs.egress_policy }}"
           allowed-endpoints: "${{ env.CONNECTION_ALLOW_LIST }}"
