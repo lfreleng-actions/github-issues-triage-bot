@@ -59,7 +59,7 @@ jobs:
       skip_agent: true
       egress_policy: 'block'
       # yamllint disable-line rule:line-length
-      egress_allow_config: '@ac32415b91e0b6db1166bc451024c472cdbcbd3d'  # v0.16.8
+      egress_allow_config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
       assets_repository: >-
         ${{ github.event.pull_request.head.repo.full_name }}
       assets_ref: "${{ github.event.pull_request.head.sha }}"
@@ -82,7 +82,7 @@ jobs:
       retriage: true
       egress_policy: 'block'
       # yamllint disable-line rule:line-length
-      egress_allow_config: '@ac32415b91e0b6db1166bc451024c472cdbcbd3d'  # v0.16.8
+      egress_allow_config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
       assets_repository: "${{ github.repository }}"
       assets_ref: "${{ github.sha }}"
     secrets:
@@ -99,7 +99,7 @@ jobs:
     steps:
       - name: 'Harden runner'
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
         with:
           egress-policy: 'audit'
       - name: 'Checkout repository'
@@ -109,7 +109,7 @@ jobs:
           persist-credentials: false
       - name: 'Install uv'
         # yamllint disable-line rule:line-length
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           enable-cache: false
       - name: 'Run offline regression suite'
@@ -125,7 +125,7 @@ jobs:
     steps:
       - name: 'Harden runner'
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
         with:
           egress-policy: 'audit'
 
@@ -137,7 +137,7 @@ jobs:
 
       - name: 'Install uv'
         # yamllint disable-line rule:line-length
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           enable-cache: false
 
