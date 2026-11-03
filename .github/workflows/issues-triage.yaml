@@ -41,15 +41,39 @@ on:
         type: string
         default: ''
 
-      egress_policy:
+      harden_runner_egress:
         description: >-
           harden-runner egress for the trusted Prepare and Apply jobs:
           audit or block. Propose always audits; the model backend is
           outside the organisation allow-list.
         type: string
         default: 'audit'
-      egress_allow_config:
+      harden_runner_allowlist:
         description: 'harden-runner-block-action config coordinate'
+        type: string
+        default: ''
+      harden_runner_supplemental_allowlist:
+        description: >-
+          Extra harden-runner allow-list merged with
+          harden_runner_allowlist, in the same coordinate grammar.
+          Empty adds nothing
+        required: false
+        type: string
+        default: ''
+      harden_runner_supplemental_unpinned:
+        description: >-
+          Let harden_runner_supplemental_allowlist omit '@ref' and
+          follow its default branch; only a list in the caller's own
+          organisation qualifies
+        required: false
+        type: boolean
+        default: false
+      harden_runner_extra_endpoints:
+        description: >-
+          Extra egress endpoints written inline, host[:port] tokens
+          separated by spaces or newlines, merged into the allow-list
+          for short-lived fixes. Empty adds nothing
+        required: false
         type: string
         default: ''
       github_app_client_id:
@@ -115,18 +139,27 @@ jobs:
       repository: "${{ steps.repository.outputs.csv }}"
     steps:
       - name: 'Load egress allow-list'
-        if: inputs.egress_policy == 'block'
+        if: inputs.harden_runner_egress == 'block'
         # yamllint disable-line rule:line-length
         uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
         with:
-          config: "${{ inputs.egress_allow_config }}"
+          config: "${{ inputs.harden_runner_allowlist }}"
+          # yamllint disable-line rule:line-length
+          supplemental_config: "${{ inputs.harden_runner_supplemental_allowlist }}"
+          # A caller naming a list depends on it, so its absence fails
+          # here rather than at the first blocked connection.
+          # yamllint disable-line rule:line-length
+          supplemental_required: "${{ inputs.harden_runner_supplemental_allowlist != '' && 'true' || 'false' }}"
+          # yamllint disable-line rule:line-length
+          supplemental_unpinned: "${{ inputs.harden_runner_supplemental_unpinned && 'true' || 'false' }}"
+          extra_endpoints: "${{ inputs.harden_runner_extra_endpoints }}"
           allow_list_summary: 'true'
 
       - name: 'Harden runner'
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
         with:
-          egress-policy: "${{ inputs.egress_policy }}"
+          egress-policy: "${{ inputs.harden_runner_egress }}"
           allowed-endpoints: "${{ env.CONNECTION_ALLOW_LIST }}"
 
       - name: 'Allocate invocation identity'
@@ -260,8 +293,8 @@ jobs:
           BOT_APP_CLIENT_ID: "${{ inputs.github_app_client_id }}"
           BOT_APP_PRIVATE_KEY: "${{ secrets.github_app_private_key }}"
           COPILOT_GITHUB_TOKEN: "${{ secrets.copilot_token }}"
-          EGRESS_POLICY: "${{ inputs.egress_policy }}"
-          EGRESS_ALLOW_CONFIG: "${{ inputs.egress_allow_config }}"
+          EGRESS_POLICY: "${{ inputs.harden_runner_egress }}"
+          EGRESS_ALLOW_CONFIG: "${{ inputs.harden_runner_allowlist }}"
           DRY_RUN: "${{ inputs.dry_run }}"
           # yamllint disable-line rule:line-length
           JOB_WORKFLOW_SHA: "${{ job.workflow_sha || github.job_workflow_sha }}"
@@ -582,18 +615,27 @@ jobs:
       contents: read  # Checkout trusted applier
     steps:
       - name: 'Load egress allow-list'
-        if: inputs.egress_policy == 'block'
+        if: inputs.harden_runner_egress == 'block'
         # yamllint disable-line rule:line-length
         uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
         with:
-          config: "${{ inputs.egress_allow_config }}"
+          config: "${{ inputs.harden_runner_allowlist }}"
+          # yamllint disable-line rule:line-length
+          supplemental_config: "${{ inputs.harden_runner_supplemental_allowlist }}"
+          # A caller naming a list depends on it, so its absence fails
+          # here rather than at the first blocked connection.
+          # yamllint disable-line rule:line-length
+          supplemental_required: "${{ inputs.harden_runner_supplemental_allowlist != '' && 'true' || 'false' }}"
+          # yamllint disable-line rule:line-length
+          supplemental_unpinned: "${{ inputs.harden_runner_supplemental_unpinned && 'true' || 'false' }}"
+          extra_endpoints: "${{ inputs.harden_runner_extra_endpoints }}"
           allow_list_summary: 'false'
 
       - name: 'Harden runner'
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
         with:
-          egress-policy: "${{ inputs.egress_policy }}"
+          egress-policy: "${{ inputs.harden_runner_egress }}"
           allowed-endpoints: "${{ env.CONNECTION_ALLOW_LIST }}"
 
       - name: 'Require trusted provenance'

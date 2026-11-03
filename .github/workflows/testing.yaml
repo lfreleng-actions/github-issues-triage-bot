@@ -57,9 +57,9 @@ jobs:
       dry_run: true
       # Skip the agent: PR runs are secretless (see header comment).
       skip_agent: true
-      egress_policy: 'block'
+      harden_runner_egress: 'block'
       # yamllint disable-line rule:line-length
-      egress_allow_config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
+      harden_runner_allowlist: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
       assets_repository: >-
         ${{ github.event.pull_request.head.repo.full_name }}
       assets_ref: "${{ github.event.pull_request.head.sha }}"
@@ -80,9 +80,9 @@ jobs:
       # Re-examine labelled issues so the agent session always runs
       # and the report always carries proposals to inspect.
       retriage: true
-      egress_policy: 'block'
+      harden_runner_egress: 'block'
       # yamllint disable-line rule:line-length
-      egress_allow_config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
+      harden_runner_allowlist: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
       assets_repository: "${{ github.repository }}"
       assets_ref: "${{ github.sha }}"
     secrets:

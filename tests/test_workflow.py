@@ -463,7 +463,7 @@ class WorkflowContractTests(WorkflowCase):
         self.assertEqual(
             loader,
             {
-                "config": cron["jobs"]["triage"]["with"]["egress_allow_config"],
+                "config": cron["jobs"]["triage"]["with"]["harden_runner_allowlist"],
                 "allow_list_summary": "false",
             },
         )
@@ -611,12 +611,14 @@ class WorkflowContractTests(WorkflowCase):
                     loaders[0]["with"].get("allow_list_summary", "true"), expected
                 )
                 self.assertEqual(
-                    loaders[0]["with"]["config"], "${{ inputs.egress_allow_config }}"
+                    loaders[0]["with"]["config"],
+                    "${{ inputs.harden_runner_allowlist }}",
                 )
                 harden = self.actions(job, "step-security/harden-runner")
                 self.assertEqual(len(harden), 1)
                 self.assertEqual(
-                    harden[0]["with"]["egress-policy"], "${{ inputs.egress_policy }}"
+                    harden[0]["with"]["egress-policy"],
+                    "${{ inputs.harden_runner_egress }}",
                 )
         self.assertEqual(
             self.actions("propose", "lfreleng-actions/harden-runner-block-action"), []
@@ -626,7 +628,6 @@ class WorkflowContractTests(WorkflowCase):
         self.assertEqual(harden[0]["with"]["egress-policy"], "audit")
         self.assertNotIn("allowed-endpoints", harden[0]["with"])
 
-    @unittest.expectedFailure
     def test_every_allow_list_loader_passes_every_list_input(self) -> None:
         """Each block-action step forwards the baseline and every extension.
 
@@ -933,7 +934,7 @@ class SelfRepositoryCallTests(unittest.TestCase):
     def test_every_bundled_call_runs_trusted_jobs_in_block_mode(self) -> None:
         """Each caller of the reusable workflow passes block and a pinned list.
 
-        The reusable workflow forwards egress_policy to Prepare and Apply
+        The reusable workflow forwards harden_runner_egress to Prepare and Apply
         (Propose always audits), so the bundled callers are where block
         mode is chosen; a caller dropping to audit would leave the
         trusted, credential-holding jobs unrestricted.
@@ -949,9 +950,10 @@ class SelfRepositoryCallTests(unittest.TestCase):
                 calls += 1
                 with self.subTest(caller=name, job=job_name):
                     supplied = job["with"]
-                    self.assertEqual(supplied.get("egress_policy"), "block")
+                    self.assertEqual(supplied.get("harden_runner_egress"), "block")
                     self.assertRegex(
-                        str(supplied.get("egress_allow_config", "")), r"^@[0-9a-f]{40}$"
+                        str(supplied.get("harden_runner_allowlist", "")),
+                        r"^@[0-9a-f]{40}$",
                     )
         # Cron's triage job and testing's plumbing and dry-run jobs.
         self.assertEqual(calls, 3)

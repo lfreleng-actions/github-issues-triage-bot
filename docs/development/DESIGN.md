@@ -213,9 +213,15 @@ dispatch its run ID, so one agent dry run never cancels another.
 ### 7.1 Egress
 
 The trusted jobs, Prepare and Apply, run harden-runner in the mode
-`egress_policy` names, `block` by default in the bundled callers,
-and load the organisation allow-list first from the coordinate in
-`egress_allow_config`. Propose always audits, because the Copilot
+`harden_runner_egress` names, `block` by default in the bundled
+callers, and load the organisation allow-list first from the
+coordinate in `harden_runner_allowlist`. A caller may extend that
+list with a supplemental coordinate in
+`harden_runner_supplemental_allowlist`, which must then load, and
+with inline `host[:port]` tokens in `harden_runner_extra_endpoints`.
+`harden_runner_supplemental_unpinned` lets a same-organisation
+supplemental list follow its default branch; pre-flight checks the
+pin on the baseline alone. Propose always audits, because the Copilot
 model backend (`api.githubcopilot.com` and its enterprise endpoint)
 is outside the organisation allow-list and a session in block mode
 cannot start. Audit records outbound calls without blocking them.
