@@ -626,6 +626,59 @@ class WorkflowContractTests(WorkflowCase):
         self.assertEqual(harden[0]["with"]["egress-policy"], "audit")
         self.assertNotIn("allowed-endpoints", harden[0]["with"])
 
+    @unittest.expectedFailure
+    def test_every_allow_list_loader_passes_every_list_input(self) -> None:
+        """Each block-action step forwards the baseline and every extension.
+
+        Passing all five keys, empty defaults included, keeps a caller's
+        supplemental list or inline endpoints from silently skipping one
+        trusted job. supplemental_required is derived, never an input.
+        """
+        expected = {
+            "config": "${{ inputs.harden_runner_allowlist }}",
+            "supplemental_config": (
+                "${{ inputs.harden_runner_supplemental_allowlist }}"
+            ),
+            "supplemental_required": (
+                "${{ inputs.harden_runner_supplemental_allowlist != '' "
+                "&& 'true' || 'false' }}"
+            ),
+            "supplemental_unpinned": (
+                "${{ inputs.harden_runner_supplemental_unpinned && 'true' || 'false' }}"
+            ),
+            "extra_endpoints": "${{ inputs.harden_runner_extra_endpoints }}",
+        }
+        loaders = [
+            (name, step)
+            for name, job in self.jobs.items()
+            for step in job.get("steps", [])
+            if str(step.get("uses", "")).split("@")[0]
+            == "lfreleng-actions/harden-runner-block-action"
+        ]
+        self.assertEqual([name for name, _ in loaders], ["prepare", "apply"])
+        for name, step in loaders:
+            with self.subTest(job=name):
+                self.assertEqual(step["if"], "inputs.harden_runner_egress == 'block'")
+                supplied = {key: step["with"].get(key) for key in expected}
+                self.assertEqual(supplied, expected)
+        reusable: dict[str, Any] = yaml.load(
+            WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader
+        )
+        inputs = reusable["on"]["workflow_call"]["inputs"]
+        self.assertNotIn("supplemental_required", inputs)
+        self.assertNotIn("harden_runner_supplemental_required", inputs)
+        self.assertEqual(inputs["harden_runner_egress"]["default"], "audit")
+        unpinned = inputs["harden_runner_supplemental_unpinned"]
+        self.assertEqual((unpinned["type"], unpinned["default"]), ("boolean", "false"))
+        for name in (
+            "harden_runner_allowlist",
+            "harden_runner_supplemental_allowlist",
+            "harden_runner_extra_endpoints",
+        ):
+            with self.subTest(input=name):
+                self.assertEqual(inputs[name]["type"], "string")
+                self.assertEqual(inputs[name]["default"], "")
+
     def test_apply_can_report_when_propose_is_skipped_or_fails(self) -> None:
         """A status function overrides implicit success without allowing cancellation."""
         self.assert_expression(
