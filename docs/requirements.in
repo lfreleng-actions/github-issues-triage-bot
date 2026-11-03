@@ -6,4 +6,4 @@
 #
 #   uv pip compile docs/requirements.in \
 #     --generate-hashes --output-file docs/requirements.txt
-mkdocs-material==9.7.7
+mkdocs-material==9.8.0
