@@ -27,6 +27,27 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "issues-triage.yaml"
 SPLITTER = "lfreleng-actions/list-splitter-action"
 
+# setup-uv's own "uv python find" must not reach any interpreter the
+# job's environment names: an invalid preference refuses the lookup.
+# setup-uv puts UV_PYTHON_INSTALL_DIR on PATH ahead of its uv and runs a
+# bare "uv", so the step pins it to the directory Install Python uses.
+GUARDED_SETUP_UV_WITH = {
+    "working-directory": "${{ runner.temp }}",
+    "tool-bin-dir": "${{ runner.temp }}/uv-tool-bin",
+    "enable-cache": False,
+}
+GUARDED_SETUP_UV_ENV = {
+    "UV_NO_CONFIG": "1",
+    "UV_NO_PROJECT": "1",
+    "UV_PYTHON_PREFERENCE": "lookup-disabled",
+    "UV_PYTHON_ARCH": "",
+    "UV_PYTHON_INSTALL_DIR": "${{ runner.temp }}/uv-python",
+}
+TRUSTED_UV_ENV = {
+    "UV": "${{ steps.setup-uv.outputs.uv-path }}",
+    "PYTHON": "${{ steps.python.outputs.path }}",
+}
+
 
 class WorkflowCase(unittest.TestCase):
     """Read workflow structure, never comments or a duplicated fixture workflow."""
@@ -710,27 +731,80 @@ class PreflightContracts(WorkflowCase):
         )
 
     def test_uv_setup_works_outside_the_workspace(self) -> None:
-        """setup-uv looks up Python in the runner's temp directory, settings off."""
-        setup = self.step("prepare", "Set up uv")
-        self.assertEqual(setup["with"]["working-directory"], "${{ runner.temp }}")
+        """Every setup-uv step runs outside the workspace with its lookup refused."""
+        setups = [
+            (path.name, step)
+            for path in sorted(WORKFLOW.parent.glob("*.yaml"))
+            for job in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"].values()
+            for step in job.get("steps", [])
+            if step.get("uses", "").startswith("astral-sh/setup-uv@")
+        ]
+        self.assertEqual(len(setups), 5)
+        for name, setup in setups:
+            with self.subTest(workflow=name, step=setup["name"]):
+                self.assertEqual(setup["id"], "setup-uv")
+                self.assertEqual(setup["with"], GUARDED_SETUP_UV_WITH)
+                self.assertEqual(setup["env"], GUARDED_SETUP_UV_ENV)
+
+    def test_uv_never_chooses_its_own_interpreter(self) -> None:
+        """Every uv call runs by path and takes an absolute, trusted --python."""
+        for path in sorted(WORKFLOW.parent.glob("*.yaml")):
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn("UV_SYSTEM_PYTHON", text, path.name)
+            # --system only where nothing but a managed install remains.
+            self.assertEqual(
+                text.count("--system"),
+                text.count(
+                    '"$UV" python find --managed-python \\\n            --system 3.13)'
+                ),
+                path.name,
+            )
+            for job in yaml.safe_load(text)["jobs"].values():
+                for step in job.get("steps", []):
+                    lines = step.get("run", "").splitlines()
+                    code = "\n".join(x for x in lines if not x.lstrip().startswith("#"))
+                    run = " ".join(code.replace("\\\n", " ").split())
+                    with self.subTest(workflow=path.name, step=step.get("name")):
+                        self.assertNotRegex(run, r"(^|[;&|(]\s*|\s)uv\s")
+                        for call in re.findall(
+                            r'"\$UV" (?:run|venv|pip|sync|export|tool)\b[^;&|]*', run
+                        ):
+                            self.assertRegex(
+                                call,
+                                r'--python "\$(PYTHON|PWD/\.venv/bin/python)"'
+                                r"|^\"\$UV\" run --no-config --no-project python -c ''",
+                            )
+
+    def test_trusted_python_is_installed_under_an_emptied_environment(self) -> None:
+        """The interpreter comes from uv's own install, found by --managed-python."""
+        step = self.step("prepare", "Install Python")
+        self.assertEqual(step["id"], "python")
+        self.assertEqual(step["shell"], "bash")
+        # uv python find inspects a .venv in its working directory.
+        self.assertEqual(step["working-directory"], "${{ runner.temp }}")
         self.assertEqual(
-            setup["env"],
-            {"UV_NO_CONFIG": "1", "UV_SYSTEM_PYTHON": "1", "UV_NO_PROJECT": "1"},
+            step["env"]["INSTALL_DIR"], GUARDED_SETUP_UV_ENV["UV_PYTHON_INSTALL_DIR"]
         )
+        self.assertEqual(
+            step["env"],
+            {
+                "UV": "${{ steps.setup-uv.outputs.uv-path }}",
+                "INSTALL_DIR": "${{ runner.temp }}/uv-python",
+            },
+        )
+        self.assert_before("prepare", "Set up uv", "Install Python")
+        self.assert_before("prepare", "Install Python", "Install zizmor")
+        for name in ("Install zizmor", "Pre-flight: workflow contracts and audit"):
+            with self.subTest(step=name):
+                self.assertEqual(self.step("prepare", name)["env"], TRUSTED_UV_ENV)
 
     def test_gate_environment_is_built_outside_the_workspace(self) -> None:
-        """uv run gets an interpreter found in RUNNER_TEMP and an env there."""
+        """uv run gets the trusted interpreter and an env in RUNNER_TEMP."""
         run = self.step("prepare", "Pre-flight: workflow contracts and audit")["run"]
         run = " ".join(run.replace("\\\n", " ").split())
         self.assertIn(
-            'py="$(cd "$RUNNER_TEMP" &&'
-            ' UV_NO_CONFIG=1 uv python find --system --no-project)"',
-            run,
-        )
-        self.assertIn('if [ -z "$py" ]; then', run)
-        self.assertIn(
             'UV_PROJECT_ENVIRONMENT="$RUNNER_TEMP/preflight-venv"'
-            ' uv run --locked --python "$py" python -B scripts/preflight.py',
+            ' "$UV" run --locked --python "$PYTHON" python -B scripts/preflight.py',
             run,
         )
 
@@ -746,6 +820,7 @@ class PreflightContracts(WorkflowCase):
         self.assertEqual(steps["Checkout assets"]["with"]["path"], "triage-assets")
         mirrored = (
             "Set up uv",
+            "Install Python",
             "Install zizmor",
             "Pre-flight: workflow contracts and audit",
         )
@@ -753,10 +828,68 @@ class PreflightContracts(WorkflowCase):
             with self.subTest(step=name):
                 self.assertEqual(steps[name], self.step("prepare", name))
         plant = "Plant interpreters and uv settings"
+        control = "Control: PATH reaches the bait"
         self.assertIn('plant "$GITHUB_WORKSPACE"\n', steps[plant]["run"])
         self.assertIn('plant "$GITHUB_WORKSPACE/triage-assets"', steps[plant]["run"])
-        self.assertLess(names.index(plant), names.index(mirrored[0]))
+        self.assertLess(names.index(plant), names.index(control))
+        self.assertLess(names.index(control), names.index(mirrored[0]))
         self.assertEqual(names[-1], "Check no planted interpreter ran")
+
+    def test_preflight_isolation_plants_the_caller_variable_routes(self) -> None:
+        """Each leg points PATH and its variables at bait through the job env."""
+        testing: dict[str, Any] = yaml.safe_load(
+            (WORKFLOW.parent / "testing.yaml").read_text(encoding="utf-8")
+        )
+        job = testing["jobs"]["preflight-isolation"]
+        self.assertEqual(
+            job["strategy"]["matrix"]["route"], ["uv-python", "virtual-env"]
+        )
+        steps = {step.get("name"): step for step in job["steps"]}
+        run = steps["Plant interpreters and uv settings"]["run"]
+        for exe in ("python3", "python", "python3.13", "uv"):
+            with self.subTest(bait=exe):
+                self.assertRegex(run, rf"\.venv/bin/{re.escape(exe)}\s")
+        self.assertRegex(run, r"\splanted-install/uv\s")
+        for fragment in (
+            '"$1/.venv/conda-meta"',
+            'echo "$bait/bin" >> "$GITHUB_PATH"',
+            "echo 'UV_PYTHON_ARCH=x86_64'",
+            "echo 'UV_NO_CACHE=1'",
+            'echo "UV_PYTHON_INSTALL_DIR=$GITHUB_WORKSPACE/planted-install"',
+            'echo "UV_PYTHON=$bait/bin/python3"',
+            'echo "UV_PYTHON_SEARCH_PATH=$bait/bin"',
+            'echo "VIRTUAL_ENV=$bait"',
+            'echo "CONDA_PREFIX=$bait"',
+            'echo "UV_INTERNAL__PARENT_INTERPRETER=$bait/bin/python3"',
+            '} >> "$GITHUB_ENV"',
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, run)
+        control = steps["Control: PATH reaches the bait"]["run"]
+        self.assertIn("/usr/bin/python3 -I -c", control)
+        self.assertIn('PATH="$UV_PYTHON_INSTALL_DIR:$PATH" /usr/bin/python3', control)
+        self.assertIn('"$GITHUB_WORKSPACE/planted-install/uv" "$marker"', control)
+        self.assertIn('rm "$marker"', control)
+        check = steps["Check no planted interpreter ran"]["run"]
+        self.assertLess(
+            check.index('if [ -e "$marker" ]'),
+            check.index("run --no-config --no-project"),
+        )
+
+    def test_every_trusted_python_step_matches_the_prepare_job(self) -> None:
+        """Other workflows install the interpreter exactly as the gate does."""
+        expected = self.step("prepare", "Install Python")
+        found = 0
+        for path in sorted(WORKFLOW.parent.glob("*.yaml")):
+            for job in yaml.safe_load(path.read_text(encoding="utf-8"))[
+                "jobs"
+            ].values():
+                for step in job.get("steps", []):
+                    if step.get("name") == "Install Python":
+                        found += 1
+                        with self.subTest(workflow=path.name):
+                            self.assertEqual(step, expected)
+        self.assertEqual(found, 5)
 
     def test_every_mint_owner_is_the_trusted_org_input(self) -> None:
         """owner is literally inputs.org on every create-github-app-token step."""
@@ -1015,19 +1148,18 @@ class WorkflowScriptTests(WorkflowCase):
     bash: str
 
     def run_preflight_with_stub_uv(
-        self, found: str
+        self,
     ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
         """Run the real pre-flight step; a stub uv logs each call it gets."""
         (self.root / "triage-assets").mkdir()
         runner_temp = self.root / "runner-temp"
         runner_temp.mkdir()
         log = self.root / "uv-log"
-        uv = self.root / "bin" / "uv"
+        uv = self.root / "trusted-uv"
         uv.write_text(
             "#!/bin/sh\n"
-            'printf "%s|%s|%s|%s\\n" "$(pwd -P)" "${UV_NO_CONFIG:-}"'
-            ' "${UV_PROJECT_ENVIRONMENT:-}" "$*" >> "$UV_LOG"\n'
-            'if [ "$1" = python ]; then printf "%s" "$STUB_PY"; fi\n',
+            'printf "%s|%s|%s\\n" "$(pwd -P)"'
+            ' "${UV_PROJECT_ENVIRONMENT:-}" "$*" >> "$UV_LOG"\n',
             encoding="utf-8",
         )
         uv.chmod(0o755)
@@ -1035,42 +1167,86 @@ class WorkflowScriptTests(WorkflowCase):
             "prepare",
             "Pre-flight: workflow contracts and audit",
             RUNNER_TEMP=str(runner_temp),
+            UV=str(uv),
+            PYTHON="/trusted/bin/python3.13",
             UV_LOG=str(log),
-            STUB_PY=found,
         )
         calls = [
             line.split("|") for line in log.read_text(encoding="utf-8").splitlines()
         ]
         return result, calls
 
-    def test_preflight_runs_uv_with_an_interpreter_found_in_runner_temp(
-        self,
-    ) -> None:
-        """Python is found from RUNNER_TEMP; the env is built there too."""
-        result, calls = self.run_preflight_with_stub_uv("/usr/bin/python3")
+    def test_preflight_runs_uv_with_the_trusted_interpreter(self) -> None:
+        """uv runs by path, with the given Python and an env in RUNNER_TEMP."""
+        result, calls = self.run_preflight_with_stub_uv()
         self.assertEqual(result.returncode, 0, result.stderr)
         runner_temp = str(self.root / "runner-temp")
-        self.assertEqual(len(calls), 2)
-        (find_cwd, find_no_config, _, find), (run_cwd, _, run_env, run) = calls
-        self.assertEqual(Path(find_cwd), Path(runner_temp).resolve())
-        self.assertEqual(find_no_config, "1")
-        self.assertEqual(find, "python find --system --no-project")
+        self.assertEqual(len(calls), 1)
+        ((run_cwd, run_env, run),) = calls
         self.assertEqual(Path(run_cwd), (self.root / "triage-assets").resolve())
         self.assertEqual(run_env, runner_temp + "/preflight-venv")
         self.assertEqual(
             run,
-            "run --locked --python /usr/bin/python3"
+            "run --locked --python /trusted/bin/python3.13"
             " python -B scripts/preflight.py workflow --root .",
         )
 
-    def test_preflight_stops_when_no_interpreter_is_found(self) -> None:
-        """An empty lookup fails the step before uv run starts."""
-        result, calls = self.run_preflight_with_stub_uv("")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("::error::No Python interpreter found", result.stdout)
-        self.assertEqual(
-            [call[3] for call in calls], ["python find --system --no-project"]
+    def run_install_python_with_stub_uv(
+        self, found: str
+    ) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
+        """Run the real Install Python step; a stub uv logs args and env."""
+        install_dir = self.root / "runner-temp" / "uv-python"
+        log = self.root / "uv-log"
+        uv = self.root / "trusted-uv"
+        # env -i drops every variable the stub could read its log path
+        # or answer from, so both are written into it.
+        uv.write_text(
+            "#!/bin/sh\n"
+            'printf \'%s|%s|%s|%s|%s\\n\' "$*" "${UV_PYTHON-unset}"'
+            ' "${VIRTUAL_ENV-unset}"'
+            ' "${UV_PYTHON_INSTALL_DIR-}" "${HTTPS_PROXY-unset}"'
+            f" >> '{log}'\n"
+            f'if [ "$2" = find ]; then printf "%s\\n" \'{found}\'; fi\n',
+            encoding="utf-8",
         )
+        uv.chmod(0o755)
+        result = self.run_step(
+            "prepare",
+            "Install Python",
+            RUNNER_TEMP=str(self.root / "runner-temp"),
+            UV=str(uv),
+            INSTALL_DIR=str(install_dir),
+            UV_PYTHON="/planted/python3",
+            VIRTUAL_ENV="/planted",
+            HTTPS_PROXY="http://proxy.invalid:3128",
+        )
+        lines = log.read_text(encoding="utf-8").splitlines()
+        return result, lines, install_dir
+
+    def test_install_python_runs_uv_under_an_emptied_environment(self) -> None:
+        """Only the allow-list reaches uv; the managed path is the output."""
+        found = str(self.root / "runner-temp" / "uv-python" / "cp313" / "python3")
+        result, lines, install_dir = self.run_install_python_with_stub_uv(found)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            lines,
+            [
+                f"python install --quiet --no-bin 3.13|unset|unset|{install_dir}"
+                "|http://proxy.invalid:3128",
+                f"python find --managed-python --system 3.13|unset|unset|{install_dir}"
+                "|http://proxy.invalid:3128",
+            ],
+        )
+        self.assertEqual(self.outputs(), {"path": found})
+
+    def test_install_python_rejects_an_interpreter_outside_its_directory(
+        self,
+    ) -> None:
+        """A lookup that leaves the install directory fails the step."""
+        result, _, _ = self.run_install_python_with_stub_uv("/usr/bin/python3")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("::error::uv found Python outside", result.stdout)
+        self.assertFalse(self.output.exists() and self.output.read_text())
 
     @classmethod
     def setUpClass(cls) -> None:
