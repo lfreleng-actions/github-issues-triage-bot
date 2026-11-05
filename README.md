@@ -167,8 +167,11 @@ Propose never receives it.
 | `skip_agent` | `false` | Plumbing test: skip the agent session |
 | `repository` | `''` | Restrict the scan to one repository |
 | `exclude_repos` | `''` | Repositories to skip; commas and/or spaces |
-| `egress_policy` | `audit` | harden-runner mode for Prepare and Apply; Propose always audits |
-| `egress_allow_config` | `''` | `harden-runner-block-action` config coordinate |
+| `harden_runner_egress` | `audit` | harden-runner mode for Prepare and Apply; Propose always audits |
+| `harden_runner_allowlist` | `''` | `harden-runner-block-action` config coordinate |
+| `harden_runner_supplemental_allowlist` | `''` | Extra allow-list merged with the baseline, same coordinate grammar |
+| `harden_runner_supplemental_unpinned` | `false` | Let a same-organisation supplemental list omit `@ref` |
+| `harden_runner_extra_endpoints` | `''` | Inline `host[:port]` endpoints merged into the allow-list |
 | `github_app_client_id` | `''` | App auth; empty limits runs to dry-run |
 | `assets_repository` | this repo | Source of the prompt and scripts |
 | `assets_ref` | called workflow's commit | Ref of `assets_repository` to fetch |

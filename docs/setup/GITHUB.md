@@ -142,9 +142,13 @@ turn telemetry.
 
 ## Egress
 
-`egress_policy` governs the trusted Prepare and Apply jobs; the
-bundled callers run them in block mode behind the organisation
-allow-list. The Propose job always audits: the model backend
+`harden_runner_egress` governs the trusted Prepare and Apply jobs;
+the bundled callers run them in block mode behind the organisation
+allow-list that `harden_runner_allowlist` names. A caller can extend
+it with `harden_runner_supplemental_allowlist` (and
+`harden_runner_supplemental_unpinned` for an unpinned list in its own
+organisation) or with inline endpoints in
+`harden_runner_extra_endpoints`. The Propose job always audits: the model backend
 (`api.githubcopilot.com:443` and its enterprise endpoint) is outside
 that allow-list, and a session in block mode cannot start. Audit
 records traffic without blocking it; treat it as an accepted
