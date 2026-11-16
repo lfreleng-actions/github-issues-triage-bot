@@ -37,7 +37,7 @@ on:
         type: choice
         options:
           - 'Claude Opus 5.5'
-          - 'Claude Fable 5.1'
+          - 'Claude Fable 5.2'
           - 'Claude Sonnet 5.5'
           - 'GPT-6 Astra'
         default: 'Claude Opus 5.5'
@@ -99,7 +99,7 @@ jobs:
         run: |
           case "$MODEL" in
             'Claude Opus 5.5') id='claude-opus-5.5' ;;
-            'Claude Fable 5.1') id='claude-fable-5.1' ;;
+            'Claude Fable 5.2') id='claude-fable-5.2' ;;
             'Claude Sonnet 5.5') id='claude-sonnet-5.5' ;;
             'GPT-6 Astra') id='gpt-6-astra' ;;
             *) echo "::error::Unknown model $MODEL"; exit 1 ;;
