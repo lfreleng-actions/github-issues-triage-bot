@@ -167,7 +167,7 @@ Propose never receives it.
 | `skip_agent` | `false` | Plumbing test: skip the agent session |
 | `repository` | `''` | Restrict the scan to one repository |
 | `exclude_repos` | `''` | Repositories to skip; commas and/or spaces |
-| `harden_runner_egress` | `audit` | harden-runner mode for Prepare and Apply; Propose always audits |
+| `harden_runner_egress` | `audit` | harden-runner mode for Prepare and Apply; Propose always blocks to a fixed bot list |
 | `harden_runner_allowlist` | `''` | `harden-runner-block-action` config coordinate |
 | `harden_runner_supplemental_allowlist` | `''` | Extra allow-list merged with the baseline, same coordinate grammar |
 | `harden_runner_supplemental_unpinned` | `false` | Let a same-organisation supplemental list omit `@ref` |
@@ -235,8 +235,10 @@ Propose never receives it.
   text, packet contents, model credentials and runtime credentials.
   Review PAT grants, artefact access and model data handling;
   a wrong label is not the worst possible outcome.
-- **Egress control:** each runner uses harden-runner in audit or
-  block mode. Audit records traffic; it does not block it.
+- **Egress control:** Prepare and Apply run harden-runner in the
+  mode `harden_runner_egress` names; audit records traffic and does
+  not block it. Propose always blocks, to a pinned bot list holding
+  the model backend, so a session reaches those hosts alone.
 
 ## Development
 

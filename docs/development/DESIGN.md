@@ -221,17 +221,33 @@ list with a supplemental coordinate in
 with inline `host[:port]` tokens in `harden_runner_extra_endpoints`.
 `harden_runner_supplemental_unpinned` lets a same-organisation
 supplemental list follow its default branch; pre-flight checks the
-pin on the baseline alone. Propose always audits, because the Copilot
-model backend (`api.githubcopilot.com` and its enterprise endpoint)
-is outside the organisation allow-list and a session in block mode
-cannot start. Audit records outbound calls without blocking them.
+pin on the baseline alone.
 
-Audit mode on Propose is an accepted exposure, recorded here so
-operators weigh it with the full picture. §12.2 lists what sits on
-that runner: the offline issue packet, the model PAT, the job-native
-`GITHUB_TOKEN` and the Actions runtime token. A prompt-injected
-session could send any of them to a host of its choosing, and no
-claim below reduces that possibility to zero.
+Propose always runs in block mode against its own list, not the
+organisation's: `harden-runner/bots/issues_triage.txt` in the
+organisation `.github` repository, pinned at release v0.22.0
+(`dfa09089d9d88230380539d2116810910347d378`). The organisation built
+that list from harden-runner's audit records of this job's sessions,
+every one of which reached its six hosts and no other; it holds the Copilot
+model backend (`api.githubcopilot.com` and its enterprise endpoint)
+that the organisation list lacks. The workflow writes the coordinate
+as a literal in the job, never from an input, variable or dispatch
+field, so no caller can widen what the agent reaches. Propose merges
+no organisation, supplemental or inline list into it, and keeps the
+loader's `agent_not_ready` at its default, `error`. That policy
+governs an agent that exists: when harden-runner installs none, as
+when the StepSecurity API declines the run, the loader reports
+`agent_status` as `skipped` and passes. A step after harden-runner
+requires `agent_status` to equal `ready`, so the job fails rather
+than run a session unfiltered. Pre-flight's `@<sha>` check governs
+the trusted jobs' list; the contract tests pin this one and the gate.
+
+Block mode narrows the exposure; it does not remove it. §12.2 lists
+what sits on that runner: the offline issue packet, the model PAT,
+the job-native `GITHUB_TOKEN` and the Actions runtime token. A
+prompt-injected session can reach the hosts on that list alone, but
+any of them, the model backend among them, can still receive what it
+sends, and no claim below reduces that possibility to zero.
 
 What the design does about each:
 
@@ -259,14 +275,9 @@ keeps every write behind evidence the trusted jobs verify. The
 residual risks are model spend, disclosure of packet text and
 artifact interference, which the trusted jobs refuse by design.
 
-Block mode for Propose needs the model backend in the allow-list,
-which the organisation has not added; adding it would shrink the
-exposure to the backend itself and is the first item in §10.
-
-The loader's pre hook runs in the two trusted jobs, with
+The loader's pre hook runs in all three jobs, with
 `allow_list_summary` true in Prepare alone, so the shared allow-list
-summary appears once. Propose loads no allow-list because it
-enforces none.
+summary appears once.
 
 ### 7.2 Reporting and Run Artefacts
 
@@ -320,7 +331,8 @@ Session and result uploads use `always()`, but cancellation,
 runner loss or upload failure can prevent preservation. Do not
 promise a complete session log or evidence on every failure. Review
 artefact access and model data handling: the packet draws on
-public repositories but travels to an audit-mode runner (§7.1), and
+public repositories but travels to the untrusted Propose runner
+(§7.1), and
 logs can contain sensitive data despite redaction.
 
 ### 7.3 Modular consumption
@@ -393,10 +405,6 @@ exposes its model credential to the chosen code.
 
 ## 10. Open Questions
 
-- Add the Copilot model backend to the organisation egress
-  allow-list, so Propose can run in block mode and the exposure §7.1
-  accepts narrows to the backend itself. That is an organisation
-  change, outside this repository.
 - Narrow the Apply job's write token to the repositories a validated
   proposal targets. Scoping requires naming repositories, and an
   org-wide scan names none, so the installation token reaches

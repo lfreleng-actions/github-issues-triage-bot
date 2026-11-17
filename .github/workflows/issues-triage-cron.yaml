@@ -9,7 +9,7 @@
 # Scheduled runs apply triage changes. Manual dispatch defaults to
 # dry-run and respects the operator's choice. Disable this workflow
 # to pause the schedule if an operational problem needs attention
-# (docs/development/DESIGN.md section 11). Egress stays in audit mode.
+# (docs/development/DESIGN.md section 11). Every job blocks egress.
 #
 # The agent runs through the Copilot CLI: the organisation already
 # pays for Copilot, so triage spend draws on an existing
@@ -127,7 +127,7 @@ jobs:
       retriage: ${{ inputs.retriage || false }}
       repository: ${{ inputs.repository || '' }}
       # Trusted jobs run in block mode with the organisation allow-list;
-      # the propose job is always audit.
+      # the propose job always blocks to its own fixed bot list.
       harden_runner_egress: 'block'
       # yamllint disable-line rule:line-length
       harden_runner_allowlist: '@6e6cab073a93c0d58e4e8846d44e1cbddbac975b'  # v0.21.0
