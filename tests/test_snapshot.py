@@ -219,9 +219,9 @@ class SnapshotTests(unittest.TestCase):
     def test_search_asks_for_public_repositories_alone(self) -> None:
         """Visibility is a server-side search filter evaluated at fetch time.
 
-        The packet reaches a runner that audits egress rather than
-        blocking it, so the snapshot fetches text the organisation
-        already publishes and nothing else; filtering in the query
+        The packet reaches an untrusted runner that can still reach the
+        hosts on its allow-list, so the snapshot fetches text the
+        organisation already publishes and nothing else; filtering in the query
         leaves no window between a listing and the fetch.
         """
         result = self.run_snapshot("[]")

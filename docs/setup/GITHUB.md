@@ -148,14 +148,14 @@ allow-list that `harden_runner_allowlist` names. A caller can extend
 it with `harden_runner_supplemental_allowlist` (and
 `harden_runner_supplemental_unpinned` for an unpinned list in its own
 organisation) or with inline endpoints in
-`harden_runner_extra_endpoints`. The Propose job always audits: the model backend
-(`api.githubcopilot.com:443` and its enterprise endpoint) is outside
-that allow-list, and a session in block mode cannot start. Audit
-records traffic without blocking it; treat it as an accepted
-exposure, and read [Design §7.1](../development/DESIGN.md#71-egress)
-for what sits on that runner and what the design does about each
-item. Adding the backend to the organisation allow-list is the step
-that would let Propose block too.
+`harden_runner_extra_endpoints`. The Propose job always blocks,
+against a fixed list the workflow names as a literal:
+`harden-runner/bots/issues_triage.txt` in the organisation `.github`
+repository at v0.22.0, which holds the model backend
+(`api.githubcopilot.com:443` and its enterprise endpoint). No input
+widens that list. Read [Design §7.1](../development/DESIGN.md#71-egress)
+for what still sits on that runner and what the design does about
+each item.
 
 ## Failure modes
 
@@ -166,6 +166,7 @@ that would let Propose block too.
 | PAT format guard fails                 | Supply a `github_pat_` PAT through `copilot_token`, then review its permissions.                                                  |
 | CLI authentication or model failure    | Check expiry, Copilot Requests, owner entitlement and model access; prefix acceptance proves none of these.                       |
 | Session tries to use `gh`              | The session must use the offline packet; do not add an App token to make the command work.                                        |
+| Require egress enforcement fails       | harden-runner's agent did not report ready; Propose stops before the session. Re-run; never drop the gate or switch to audit.     |
 | Missing or malformed summary           | Inspect the separate session artefact; Apply must not consume failed-session proposals.                                           |
 | Missing evidence ID or digest mismatch | Stop and investigate provenance; do not substitute an artefact with a matching name.                                              |
 | Live configuration read failure        | Fix App access or the API failure; live mode must fail rather than drop unreadable configuration.                                 |

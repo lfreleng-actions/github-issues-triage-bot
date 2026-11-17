@@ -615,11 +615,9 @@ class WorkflowContractTests(WorkflowCase):
             with self.subTest(step=step.get("name")):
                 self.assertIn("needs.propose.result == 'success'", step["if"])
 
-    def test_trusted_jobs_block_and_propose_audits(self) -> None:
-        """Trusted jobs load the allow-list; the agent job audits.
+    def test_trusted_jobs_block_with_the_organisation_list(self) -> None:
+        """Trusted jobs load the caller's allow-list in the caller's mode.
 
-        The model backend is outside the organisation allow-list, so a
-        propose job in block mode cannot reach it (run 37522458757).
         The summary prints from prepare alone.
         """
         for job, expected in (("prepare", "true"), ("apply", "false")):
@@ -641,13 +639,68 @@ class WorkflowContractTests(WorkflowCase):
                     harden[0]["with"]["egress-policy"],
                     "${{ inputs.harden_runner_egress }}",
                 )
+
+    def test_propose_blocks_to_the_literal_bot_list(self) -> None:
+        """The agent job enforces a pinned bot list no caller can widen.
+
+        The coordinate is a literal with an explicit path and a 40-hex
+        pin, so no input, variable or dispatch field reaches it, and
+        nothing merges into it. The loader runs before harden-runner,
+        keeps agent_not_ready at error and carries the id the readiness
+        gate reads.
+        """
+        steps = self.jobs["propose"]["steps"]
+        uses = [str(step.get("uses", "")).split("@")[0] for step in steps]
+        loader_action = "lfreleng-actions/harden-runner-block-action"
+        harden_action = "step-security/harden-runner"
+        self.assertEqual(uses.count(loader_action), 1)
+        self.assertEqual(uses.count(harden_action), 1)
+        self.assertLess(uses.index(loader_action), uses.index(harden_action))
+        loader = steps[uses.index(loader_action)]
+        self.assertNotIn("if", loader)
+        supplied = loader["with"]
         self.assertEqual(
-            self.actions("propose", "lfreleng-actions/harden-runner-block-action"), []
+            supplied["config"],
+            "lfreleng-actions//.github/harden-runner/bots/issues_triage.txt"
+            "@dfa09089d9d88230380539d2116810910347d378",
         )
-        harden = self.actions("propose", "step-security/harden-runner")
-        self.assertEqual(len(harden), 1)
-        self.assertEqual(harden[0]["with"]["egress-policy"], "audit")
-        self.assertNotIn("allowed-endpoints", harden[0]["with"])
+        self.assertRegex(
+            supplied["config"],
+            r"^lfreleng-actions//\.github/harden-runner/bots/issues_triage\.txt"
+            r"@[0-9a-f]{40}$",
+        )
+        self.assertNotIn("${{", supplied["config"])
+        self.assertEqual(supplied.get("allow_list_summary"), "false")
+        for key in ("supplemental_config", "extra_endpoints"):
+            with self.subTest(key=key):
+                self.assertNotIn(key, supplied)
+        self.assertEqual(supplied.get("agent_not_ready", "error"), "error")
+        self.assertEqual(loader.get("id"), "egress")
+        harden = steps[uses.index(harden_action)]
+        self.assertNotIn("if", harden)
+        self.assertEqual(harden["with"]["egress-policy"], "block")
+        self.assertEqual(
+            harden["with"]["allowed-endpoints"], "${{ env.CONNECTION_ALLOW_LIST }}"
+        )
+
+    def test_propose_requires_a_ready_egress_agent(self) -> None:
+        """No later step runs unless the loader saw the agent enforce.
+
+        The loader passes with agent_status 'skipped' when harden-runner
+        installs no agent, whatever agent_not_ready says, so the step
+        after harden-runner must require 'ready' itself, unconditionally.
+        """
+        steps = self.jobs["propose"]["steps"]
+        uses = [str(step.get("uses", "")).split("@")[0] for step in steps]
+        harden_index = uses.index("step-security/harden-runner")
+        gate = steps[harden_index + 1]
+        self.assertEqual(gate["name"], "Require egress enforcement")
+        self.assertNotIn("if", gate)
+        self.assertNotIn("continue-on-error", gate)
+        self.assertEqual(
+            gate["env"], {"AGENT_STATUS": "${{ steps.egress.outputs.agent_status }}"}
+        )
+        self.assertEqual(gate["run"], '[[ "$AGENT_STATUS" == "ready" ]]')
 
     def test_every_allow_list_loader_passes_every_list_input(self) -> None:
         """Each block-action step forwards the baseline and every extension.
@@ -655,6 +708,7 @@ class WorkflowContractTests(WorkflowCase):
         Passing all five keys, empty defaults included, keeps a caller's
         supplemental list or inline endpoints from silently skipping one
         trusted job. supplemental_required is derived, never an input.
+        Propose loads its own literal list, which takes no input.
         """
         expected = {
             "config": "${{ inputs.harden_runner_allowlist }}",
@@ -674,7 +728,8 @@ class WorkflowContractTests(WorkflowCase):
             (name, step)
             for name, job in self.jobs.items()
             for step in job.get("steps", [])
-            if str(step.get("uses", "")).split("@")[0]
+            if name != "propose"
+            and str(step.get("uses", "")).split("@")[0]
             == "lfreleng-actions/harden-runner-block-action"
         ]
         self.assertEqual([name for name, _ in loaders], ["prepare", "apply"])
@@ -1068,7 +1123,7 @@ class SelfRepositoryCallTests(unittest.TestCase):
         """Each caller of the reusable workflow passes block and a pinned list.
 
         The reusable workflow forwards harden_runner_egress to Prepare and Apply
-        (Propose always audits), so the bundled callers are where block
+        (Propose always blocks to its own list), so the bundled callers are where block
         mode is chosen; a caller dropping to audit would leave the
         trusted, credential-holding jobs unrestricted.
         """

@@ -44,8 +44,7 @@ on:
       harden_runner_egress:
         description: >-
           harden-runner egress for the trusted Prepare and Apply jobs:
-          audit or block. Propose always audits; the model backend is
-          outside the organisation allow-list.
+          audit or block. Propose always blocks, to a fixed bot list.
         type: string
         default: 'audit'
       harden_runner_allowlist:
@@ -458,19 +457,39 @@ jobs:
       # This identifies untrusted data, never code or provenance.
       session_id: "${{ steps.session.outputs.artifact-id }}"
     steps:
-      # Always audit: the model backend (api.githubcopilot.com and its
-      # enterprise endpoint) is outside the organisation allow-list,
-      # so block mode cannot run a session (run 37522458757). Audit is
-      # an accepted exposure: the packet, the model PAT, the job token
-      # and the runtime token sit on a runner that can reach any host.
-      # DESIGN.md section 7.1 states what the design does about each;
-      # none of it is a sandbox, and no credential here can write to a
-      # repository.
-      - name: 'Harden runner (audit)'
+      # Block egress to the bot list for this job: the organisation
+      # .github repository's harden-runner/bots/issues_triage.txt,
+      # built from harden-runner's audit records of this job's
+      # sessions and pinned at release v0.22.0. It holds the Copilot
+      # model backend and nothing more. The coordinate is a literal,
+      # never an input, variable or dispatch field, so no caller can
+      # widen what the agent reaches; no organisation, supplemental
+      # or inline list merges into it. agent_not_ready stays at its
+      # default, error, yet the loader passes with agent_status
+      # 'skipped' when harden-runner installs no agent, so the gate
+      # below requires 'ready' and the job fails rather than run a
+      # session unfiltered. DESIGN.md section 7.1 states what remains
+      # exposed.
+      - name: 'Load egress allow-list'
+        id: egress
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          # yamllint disable-line rule:line-length
+          config: 'lfreleng-actions//.github/harden-runner/bots/issues_triage.txt@dfa09089d9d88230380539d2116810910347d378'  # v0.22.0
+          allow_list_summary: 'false'
+
+      - name: 'Harden runner'
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a  # v2.22.4
         with:
-          egress-policy: 'audit'
+          egress-policy: 'block'
+          allowed-endpoints: "${{ env.CONNECTION_ALLOW_LIST }}"
+
+      - name: 'Require egress enforcement'
+        env:
+          AGENT_STATUS: "${{ steps.egress.outputs.agent_status }}"
+        run: '[[ "$AGENT_STATUS" == "ready" ]]'
 
       - name: 'Require pinned assets'
         env:
