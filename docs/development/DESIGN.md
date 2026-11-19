@@ -369,6 +369,7 @@ scripts/triage_github.py                   # triage-specific GitHub reads/writes
 scripts/apply_triage.py                    # validation and apply outcomes
 scripts/triage_report.py                   # snapshot diff and report
 tests/                                    # offline regression tests
+fuzz/                                     # Atheris harnesses
 docs/                                     # MkDocs site and setup guides
 ```
 

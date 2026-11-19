@@ -267,3 +267,32 @@ uv pip install --require-hashes --requirement docs/requirements.txt
 The report generator has a strict type-checking gate
 (`basedpyright`, see `pyproject.toml`) and the prompt document
 passes the same prose linting as the rest of the repository.
+
+### Fuzzing
+
+`fuzz/` holds two [Atheris](https://github.com/google/atheris)
+harnesses for code that reads input this bot does not control:
+
+- `fuzz_triage_policy.py` runs an agent message through
+  `extract_proposal`, `apply_triage.process` and the report against a
+  fake GitHub, and checks each applied action against Design §6. An
+  input that is a JSON document stands for the final block: the
+  harness fences it, decodes it on its own and judges against that.
+- `fuzz_triage_output.py` checks `triage_evidence.verify` against
+  digests it computes itself, and that `one_line` prints one inert
+  line to a strict UTF-8 stream.
+
+A daily organisation-wide job is to run them
+([lfreleng-actions/.github#372](https://github.com/lfreleng-actions/.github/issues/372));
+`tests/test_fuzz.py` replays every seed in the offline suite.
+Atheris is not a dependency. To fuzz by hand on Linux x86_64, or
+replay one input by naming its file:
+
+```bash
+uv run --no-project --python 3.13 --with atheris \
+  python fuzz/fuzz_triage_policy.py -max_total_time=60
+```
+
+`fuzz_triage_output.py` carries a seed over the 1 MiB exclusions cap,
+and raises libFuzzer's `-max_len` to that seed unless you pass one.
+Reaching the 16 MiB snapshot cap takes a `-max_len` above it.
