@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import sys
+import time
 import unittest
 from importlib import import_module
 from pathlib import Path
@@ -57,6 +58,17 @@ class ProposalParsingTests(unittest.TestCase):
         for block in ('{"proposals":', "[]", '{"other": "proposals"}', '["proposals"]'):
             with self.subTest(block=block), self.assertRaises(Rejected):
                 policy.extract_proposal(self.example + "```json\n" + block + "\n```\n")
+
+    @unittest.expectedFailure
+    def test_long_fence_run_is_scanned_in_linear_time(self) -> None:
+        """A fence run broken by a lone CR must not cost quadratic time."""
+        final = '```json\n{"proposals": []}\n```\n'
+        for char in "`~":
+            with self.subTest(char=char):
+                text = char * 40_000 + "\rx\n" + final
+                start = time.perf_counter()
+                self.assertEqual(policy.extract_proposal(text), {"proposals": []})
+                self.assertLess(time.perf_counter() - start, 2.0)
 
     def test_no_proposal_is_not_an_empty_success(self) -> None:
         """Prose alone cannot authorise any action."""
