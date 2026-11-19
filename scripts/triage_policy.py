@@ -65,8 +65,14 @@ MAX_LABELS = 2
 MAX_BATCH_ISSUES = 100
 # Track all fences, not just completed JSON blocks: otherwise a
 # truncated or mislabelled final answer falls back to the prompt's
-# worked example. Opening and closing delimiters must match.
-FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})([^\r\n]*)\r?$", re.MULTILINE)
+# worked example. Opening and closing delimiters must match. The
+# quantifiers are possessive because the summary is untrusted: with
+# greedy ones, a long fence run followed by a lone carriage return
+# makes the run and the info string trade characters on every failed
+# match, costing time quadratic in the line. Giving characters back
+# never lets such a line match, so the possessive form accepts the
+# same lines and captures the same groups in one pass.
+FENCE_RE = re.compile(r"^[ \t]*+(`{3,}+|~{3,}+)([^\r\n]*+)\r?$", re.MULTILINE)
 CANONICAL_LABELS = {name.lower(): name for name in TAXONOMY}
 
 

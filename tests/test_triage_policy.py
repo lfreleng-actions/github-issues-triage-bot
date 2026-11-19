@@ -59,7 +59,6 @@ class ProposalParsingTests(unittest.TestCase):
             with self.subTest(block=block), self.assertRaises(Rejected):
                 policy.extract_proposal(self.example + "```json\n" + block + "\n```\n")
 
-    @unittest.expectedFailure
     def test_long_fence_run_is_scanned_in_linear_time(self) -> None:
         """A fence run broken by a lone CR must not cost quadratic time."""
         final = '```json\n{"proposals": []}\n```\n'
