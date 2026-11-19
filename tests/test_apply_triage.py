@@ -73,7 +73,6 @@ class ApplyTriageTests(unittest.TestCase):
                 self.assertNotIn("::", rendered)
                 self.assertIsNone(apply_triage.CONTROL_RE.search(rendered))
 
-    @unittest.expectedFailure
     def test_c1_control_characters_are_folded(self) -> None:
         """NEL and the other C1 controls are control characters too."""
         rendered = apply_triage.one_line("a\x85b\x9bc\x80d")

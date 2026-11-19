@@ -44,8 +44,9 @@ from triage_policy import (
     validate,
 )
 
-# Control characters, the line breaks among them.
-CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+# Control characters, the line breaks among them: C0, DEL and C1,
+# which holds NEL (U+0085).
+CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 def one_line(value: object) -> str:
