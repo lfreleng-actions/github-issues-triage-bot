@@ -55,12 +55,11 @@ def one_line(value: object) -> str:
     The legacy ``##[command]`` syntax is recognised even after a
     log prefix. Escape it and the modern ``::`` syntax as well as
     folding control characters; keep the original in JSON evidence.
+    A lone surrogate, which a JSON escape can produce and the
+    runner's UTF-8 stdout cannot encode, becomes a backslash escape.
     """
-    return (
-        CONTROL_RE.sub(" ", str(value))
-        .replace("::", "%3A%3A")
-        .replace("##[", "%23%23[")
-    )
+    text = str(value).encode("utf-8", "backslashreplace").decode("utf-8")
+    return CONTROL_RE.sub(" ", text).replace("::", "%3A%3A").replace("##[", "%23%23[")
 
 
 def process(

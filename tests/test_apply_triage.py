@@ -78,7 +78,6 @@ class ApplyTriageTests(unittest.TestCase):
         rendered = apply_triage.one_line("a\x85b\x9bc\x80d")
         self.assertEqual(rendered, "a b c d")
 
-    @unittest.expectedFailure
     def test_lone_surrogates_reach_a_strict_utf8_log(self) -> None:
         """A JSON escape such as \\ud800 must not crash the runner's stdout."""
         raw = io.BytesIO()
