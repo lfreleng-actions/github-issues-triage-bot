@@ -118,6 +118,34 @@ class ApplyTriageTests(unittest.TestCase):
         self.assertIn("ESCALATE", output.getvalue())
         self.assertIn("FAILED", output.getvalue())
 
+    def test_report_fields_cannot_join_into_a_command(self) -> None:
+        """Escaped fields stay inert once the report joins them."""
+        cases = (
+            {"repository": "owner/rep#", "issue": "[1]", "reason": "r"},
+            {"repository": "owner/repo", "issue": "1:", "reason": ":x"},
+            {"repository": "owner/repo##", "issue": "[x", "reason": "r"},
+        )
+        for entry in cases:
+            action = {
+                **self.item,
+                **entry,
+                "escalate": True,
+                "dropped": ["d"],
+                "rationale": entry["reason"],
+            }
+            output = io.StringIO()
+            with self.subTest(entry=entry):
+                with redirect_stdout(output), self.assertRaises(SystemExit):
+                    apply_triage.report(
+                        [action],
+                        [entry],
+                        [entry],
+                        {"proposed": 3, "applied": 1, "rejected": 1, "failed": 1},
+                        False,
+                    )
+                self.assertNotIn("::", output.getvalue())
+                self.assertNotIn("##[", output.getvalue())
+
     def test_dry_run_validates_without_writes(self) -> None:
         """A dry run still validates, but never invokes the write path."""
         with patch.object(apply_triage, "apply") as write:

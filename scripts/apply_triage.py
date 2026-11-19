@@ -123,6 +123,11 @@ def process(
     return applied, rejected, failed
 
 
+def settled(entry: dict[str, Any]) -> str:
+    """Name a refused or failed target and say why, before escaping."""
+    return f"{entry.get('repository')}#{entry.get('issue')}: {entry.get('reason')}"
+
+
 def report(
     applied: list[dict[str, Any]],
     rejected: list[dict[str, Any]],
@@ -130,38 +135,33 @@ def report(
     counts: dict[str, int],
     dry_run: bool,
 ) -> None:
-    """Print the run's outcome, then fail if any write failed."""
+    """Print the run's outcome, then fail if any write failed.
+
+    Each line is escaped whole: fields escaped one by one could still
+    join into a runner command, as ``#`` before ``[`` or ``:`` before
+    ``: `` does.
+    """
     verb = "would apply" if dry_run else "applied"
     print(f"Proposals: {counts['proposed']}")
     print(f"{verb.capitalize()}: {counts['applied']}")
     print(f"Rejected: {counts['rejected']}")
     for action in applied:
+        target = f"{action['repository']}#{action['issue']}"
         if action["escalate"]:
             print(
-                f"  ESCALATE {one_line(action['repository'])}"
-                f"#{one_line(action['issue'])}: "
-                f"agent judged this may warrant Urgent — "
-                f"{one_line(action['rationale'])}"
+                one_line(
+                    f"  ESCALATE {target}: agent judged this may warrant Urgent — "
+                    f"{action['rationale']}"
+                )
             )
         for note in action["dropped"]:
-            print(
-                f"  dropped from {one_line(action['repository'])}"
-                f"#{one_line(action['issue'])}: {one_line(note)}"
-            )
+            print(one_line(f"  dropped from {target}: {note}"))
     for entry in rejected:
-        print(
-            f"  rejected {one_line(entry.get('repository'))}"
-            f"#{one_line(entry.get('issue'))}: "
-            f"{one_line(entry.get('reason'))}"
-        )
+        print(one_line(f"  rejected {settled(entry)}"))
     if failed:
         print(f"Failed: {counts['failed']}")
         for entry in failed:
-            print(
-                f"  FAILED {one_line(entry.get('repository'))}"
-                f"#{one_line(entry.get('issue'))}: "
-                f"{one_line(entry.get('reason'))}"
-            )
+            print(one_line(f"  FAILED {settled(entry)}"))
         sys.exit("one or more proposals could not be settled; see apply-result.json")
 
 
