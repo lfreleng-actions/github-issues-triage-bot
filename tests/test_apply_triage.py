@@ -73,6 +73,21 @@ class ApplyTriageTests(unittest.TestCase):
                 self.assertNotIn("::", rendered)
                 self.assertIsNone(apply_triage.CONTROL_RE.search(rendered))
 
+    def test_c1_control_characters_are_folded(self) -> None:
+        """NEL and the other C1 controls are control characters too."""
+        rendered = apply_triage.one_line("a\x85b\x9bc\x80d")
+        self.assertEqual(rendered, "a b c d")
+
+    def test_lone_surrogates_reach_a_strict_utf8_log(self) -> None:
+        """A JSON escape such as \\ud800 must not crash the runner's stdout."""
+        raw = io.BytesIO()
+        stream = io.TextIOWrapper(raw, encoding="utf-8", errors="strict")
+        value = json.loads('"label \\ud800 \\udcff"')
+        with redirect_stdout(stream):
+            print(apply_triage.one_line(value))
+        stream.flush()
+        self.assertEqual(stream.detach().getvalue(), b"label \\ud800 \\udcff\n")
+
     def test_legacy_commands_are_inert_even_mid_line(self) -> None:
         """The runner's legacy parser searches anywhere for ##[command]."""
         for value in ("##[add-mask]hidden", "prefix ##[error]bad", "\n##[group]hidden"):
@@ -102,6 +117,34 @@ class ApplyTriageTests(unittest.TestCase):
         self.assertNotIn("##[", output.getvalue())
         self.assertIn("ESCALATE", output.getvalue())
         self.assertIn("FAILED", output.getvalue())
+
+    def test_report_fields_cannot_join_into_a_command(self) -> None:
+        """Escaped fields stay inert once the report joins them."""
+        cases = (
+            {"repository": "owner/rep#", "issue": "[1]", "reason": "r"},
+            {"repository": "owner/repo", "issue": "1:", "reason": ":x"},
+            {"repository": "owner/repo##", "issue": "[x", "reason": "r"},
+        )
+        for entry in cases:
+            action = {
+                **self.item,
+                **entry,
+                "escalate": True,
+                "dropped": ["d"],
+                "rationale": entry["reason"],
+            }
+            output = io.StringIO()
+            with self.subTest(entry=entry):
+                with redirect_stdout(output), self.assertRaises(SystemExit):
+                    apply_triage.report(
+                        [action],
+                        [entry],
+                        [entry],
+                        {"proposed": 3, "applied": 1, "rejected": 1, "failed": 1},
+                        False,
+                    )
+                self.assertNotIn("::", output.getvalue())
+                self.assertNotIn("##[", output.getvalue())
 
     def test_dry_run_validates_without_writes(self) -> None:
         """A dry run still validates, but never invokes the write path."""
