@@ -184,7 +184,7 @@ jobs:
       - name: 'Split repository'
         id: repository
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/list-splitter-action@7bf2f3ab24d636464db599ce349bf345910c08d6  # v0.1.1
+        uses: lfreleng-actions/list-splitter-action@cc7980d43a8535b1271e36ef14c1026cdc834808  # v0.1.2
         with:
           list: "${{ inputs.repository }}"
           validate: 'repository'
@@ -194,7 +194,7 @@ jobs:
       - name: 'Split excluded repositories'
         id: exclusions
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/list-splitter-action@7bf2f3ab24d636464db599ce349bf345910c08d6  # v0.1.1
+        uses: lfreleng-actions/list-splitter-action@cc7980d43a8535b1271e36ef14c1026cdc834808  # v0.1.2
         with:
           list: "${{ inputs.exclude_repos }}"
           validate: 'repository'
