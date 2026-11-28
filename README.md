@@ -238,7 +238,10 @@ Propose never receives it.
 - **Egress control:** Prepare and Apply run harden-runner in the
   mode `harden_runner_egress` names; audit records traffic and does
   not block it. Propose always blocks, to a pinned bot list holding
-  the model backend, so a session reaches those hosts alone.
+  the model backend, so a session reaches those hosts alone. Propose
+  also revokes `sudo` and containers and fails before checkout while
+  either works, so a session cannot become root and switch its egress
+  filter off; an agent failing mid-session restores `sudo`.
 
 ## Development
 

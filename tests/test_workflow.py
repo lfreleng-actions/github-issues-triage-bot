@@ -702,6 +702,56 @@ class WorkflowContractTests(WorkflowCase):
         )
         self.assertEqual(gate["run"], '[[ "$AGENT_STATUS" == "ready" ]]')
 
+    def test_propose_revokes_sudo_and_containers(self) -> None:
+        """Root on the runner can stop the agent that filters egress.
+
+        The input is a literal YAML boolean, never an expression a
+        caller or dispatch field could turn off.
+        """
+        harden = self.actions("propose", "step-security/harden-runner")
+        self.assertEqual(len(harden), 1)
+        self.assertIs(harden[0]["with"].get("disable-sudo-and-containers"), True)
+
+    def test_propose_proves_sudo_and_containers_are_off(self) -> None:
+        """The input alone is not proof: harden-runner can skip its setup.
+
+        A step right after the egress gate, before any checkout, fails
+        the job unconditionally while either still works.
+        """
+        steps = self.jobs["propose"]["steps"]
+        check = self.step("propose", "Require sudo and containers off")
+        index = steps.index(check)
+        self.assertIs(
+            steps[index - 1], self.step("propose", "Require egress enforcement")
+        )
+        checkouts = [
+            position
+            for position, step in enumerate(steps)
+            if str(step.get("uses", "")).startswith("actions/checkout@")
+        ]
+        self.assertTrue(checkouts)
+        self.assertLess(index, checkouts[0])
+        self.assertNotIn("if", check)
+        self.assertNotIn("continue-on-error", check)
+        self.assertIn("sudo -n true", check["run"])
+        self.assertIn("docker info", check["run"])
+
+    def test_no_propose_step_after_the_check_calls_sudo_or_docker(self) -> None:
+        """A later step needing either would undo what the check proves."""
+        steps = self.jobs["propose"]["steps"]
+        index = steps.index(self.step("propose", "Require sudo and containers off"))
+        for step in steps[index + 1 :]:
+            with self.subTest(step=step.get("name")):
+                self.assertNotRegex(str(step.get("run", "")), r"\b(sudo|docker)\b")
+
+    def test_trusted_jobs_leave_sudo_and_containers_alone(self) -> None:
+        """Prepare and Apply run trusted code and are a separate question."""
+        for job in ("prepare", "apply"):
+            with self.subTest(job=job):
+                harden = self.actions(job, "step-security/harden-runner")
+                self.assertEqual(len(harden), 1)
+                self.assertNotIn("disable-sudo-and-containers", harden[0]["with"])
+
     def test_every_allow_list_loader_passes_every_list_input(self) -> None:
         """Each block-action step forwards the baseline and every extension.
 
@@ -1208,6 +1258,43 @@ class WorkflowScriptTests(WorkflowCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("Cleared", result.stdout)
+
+    def test_sudo_and_container_check_fails_while_either_works(self) -> None:
+        """Run the real check with stubs: it passes only when both are off.
+
+        ``docker info`` exits 1 when it cannot reach the daemon. Any
+        other status, ``timeout``'s 124 above all, proves nothing, so
+        the check fails closed on it.
+        """
+        log = self.root / "calls.log"
+        cases = (
+            (0, 1, "::error::sudo is still available"),
+            (1, 0, "::error::The Docker daemon is still reachable"),
+            (1, 124, "::error::docker info timed out"),
+            (1, 2, "::error::docker info failed with status 2"),
+            (1, 1, None),
+        )
+        for sudo_status, docker_status, error in cases:
+            with self.subTest(sudo=sudo_status, docker=docker_status):
+                log.write_text("", encoding="utf-8")
+                for name, status in (("sudo", sudo_status), ("docker", docker_status)):
+                    stub = self.root / "bin" / name
+                    stub.write_text(
+                        f'#!/bin/sh\necho "{name} $*" >> "$CALLS"\nexit {status}\n',
+                        encoding="utf-8",
+                    )
+                    stub.chmod(0o755)
+                result = self.run_step(
+                    "propose", "Require sudo and containers off", CALLS=str(log)
+                )
+                calls = log.read_text(encoding="utf-8").splitlines()
+                self.assertEqual(calls[0], "sudo -n true")
+                self.assertEqual(calls[1:], [] if sudo_status == 0 else ["docker info"])
+                if error is None:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(error, result.stdout)
 
     def test_copilot_cli_installs_from_the_committed_lockfile(self) -> None:
         """Run the real install against the committed pin, with npm stubbed.
