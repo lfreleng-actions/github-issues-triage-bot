@@ -702,7 +702,6 @@ class WorkflowContractTests(WorkflowCase):
         )
         self.assertEqual(gate["run"], '[[ "$AGENT_STATUS" == "ready" ]]')
 
-    @unittest.expectedFailure
     def test_propose_revokes_sudo_and_containers(self) -> None:
         """Root on the runner can stop the agent that filters egress.
 
@@ -713,7 +712,6 @@ class WorkflowContractTests(WorkflowCase):
         self.assertEqual(len(harden), 1)
         self.assertIs(harden[0]["with"].get("disable-sudo-and-containers"), True)
 
-    @unittest.expectedFailure
     def test_propose_proves_sudo_and_containers_are_off(self) -> None:
         """The input alone is not proof: harden-runner can skip its setup.
 
@@ -738,7 +736,6 @@ class WorkflowContractTests(WorkflowCase):
         self.assertIn("sudo -n true", check["run"])
         self.assertIn("docker info", check["run"])
 
-    @unittest.expectedFailure
     def test_no_propose_step_after_the_check_calls_sudo_or_docker(self) -> None:
         """A later step needing either would undo what the check proves."""
         steps = self.jobs["propose"]["steps"]
@@ -1262,7 +1259,6 @@ class WorkflowScriptTests(WorkflowCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("Cleared", result.stdout)
 
-    @unittest.expectedFailure
     def test_sudo_and_container_check_fails_while_either_works(self) -> None:
         """Run the real check with stubs: it passes only when both are off.
 

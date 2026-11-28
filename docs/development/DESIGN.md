@@ -242,6 +242,28 @@ requires `agent_status` to equal `ready`, so the job fails rather
 than run a session unfiltered. Pre-flight's `@<sha>` check governs
 the trusted jobs' list; the contract tests pin this one and the gate.
 
+Root on the runner is the means to undo that filter: stop
+harden-runner's agent, flush its firewall rules, restore the
+resolver. The hosted runner gives the job's user passwordless `sudo`
+and the Docker daemon, and Docker stands in for root, so Propose's
+harden-runner step sets `disable-sudo-and-containers: true` as a
+literal, with no input or opt-out; no step of the job needs either.
+The input is no proof on its own, since harden-runner can skip its
+setup and still succeed and its agent logs a failed revocation and
+carries on. So a step after the egress gate and before any checkout
+fails the job while `sudo -n true` or `docker info` still
+succeeds, and no later step calls either. It fails closed: the
+check passes `docker info` on exit status 1, its status when it
+cannot reach the daemon, and fails the job on a probe that times out
+or fails any other way. The loader still restarts the agent with `sudo`
+after a transient revert: the agent restores the sudoers file before
+it logs `Reverted changes` and revokes it again when it starts.
+
+That check proves the state when the session starts, not for its
+whole length. The agent restores the sudoers file whenever it
+reverts, so an agent that fails after the session starts hands back
+`sudo` along with open egress.
+
 Block mode narrows the exposure; it does not remove it. §12.2 lists
 what sits on that runner: the offline issue packet, the model PAT,
 the job-native `GITHUB_TOKEN` and the Actions runtime token. A
@@ -401,6 +423,7 @@ exposes its model credential to the chosen code.
 | Partial write or cancellation during writes | Inspect current state; targeted recovery, not automatic rollback. |
 | Human edit after validation | A race remains; do not describe live reads or concurrency as atomic protection. |
 | Prompt injection or secret exposure | No App credentials in Propose; keep provenance checks, review PAT grants and treat tool rules/redaction as defence in depth. |
+| Session gains root and disables egress filtering | Propose revokes `sudo` and containers and fails before checkout while either works; an agent failing mid-session restores `sudo` (§7.1). |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -520,9 +543,13 @@ process access can expose data or credentials beyond the intended
 packet. `--secret-env-vars=COPILOT_GITHUB_TOKEN` and log masking do
 not guarantee secrecy after a value transformation.
 Consider the model PAT, packet and Actions runtime credentials
-exposed to the untrusted runner. A wrong label is not a worst-case
-bound; model spend, data disclosure and artefact interference remain
-risks. §12.7 protects the apply path without relying on those rules.
+exposed to the untrusted runner. The session runs without `sudo` or
+the Docker daemon, which harden-runner revokes and a step proves
+before checkout (§7.1), so it cannot become root to switch its egress
+filter off; that holds from the session's start, not past an agent
+failure during it. A wrong label is not a worst-case bound; model
+spend, data disclosure and artefact interference remain risks. §12.7
+protects the apply path without relying on those rules.
 
 Run 35324225186 measured that boundary rather than assuming it. The
 session ran `sed` and `grep`, which the allow list did not name, and
@@ -621,7 +648,9 @@ Prepare's evidence ID. No action in this job receives the App key
 or an installation token. It runs no App-token action that could expose the key
 after the session. Its native `GITHUB_TOKEN` grants `contents: read`
 and no other permissions. Copilot gets the PAT described in §12.3
-for model access, without repository permissions.
+for model access, without repository permissions. The job's user
+has no `sudo` and no Docker daemon; the job fails before checkout
+while either still works (§7.1).
 
 Treat the session artefact and `session_id` output as untrusted data,
 not code or evidence provenance. Runtime credentials may permit artefact
